@@ -1,0 +1,272 @@
+{
+  "name": "bc-test-runner",
+  "displayName": "BC Test Runner",
+  "description": "Run Business Central AL tests with AI Agent Tool support for automated test iteration",
+  "version": "1.0.0",
+  "publisher": "business-solutions",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Testing",
+    "Other"
+  ],
+  "keywords": [
+    "business-central",
+    "al",
+    "testing",
+    "dynamics-365",
+    "mcp",
+    "ai-tools"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/bctest.config.json",
+    "onLanguage:al"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "bcTestRunner.runTests",
+        "title": "BC Test Runner: Run All Tests",
+        "icon": "$(testing-run-all-icon)"
+      },
+      {
+        "command": "bcTestRunner.compileApps",
+        "title": "BC Test Runner: Compile Apps"
+      },
+      {
+        "command": "bcTestRunner.publishApps",
+        "title": "BC Test Runner: Publish Apps"
+      },
+      {
+        "command": "bcTestRunner.executeTests",
+        "title": "BC Test Runner: Execute Tests (Skip Compile/Publish)"
+      },
+      {
+        "command": "bcTestRunner.viewResults",
+        "title": "BC Test Runner: View Latest Results"
+      },
+      {
+        "command": "bcTestRunner.openReport",
+        "title": "BC Test Runner: Open HTML Report"
+      },
+      {
+        "command": "bcTestRunner.selectEnvironment",
+        "title": "BC Test Runner: Select Environment"
+      },
+      {
+        "command": "bcTestRunner.setCredentials",
+        "title": "BC Test Runner: Set Credentials"
+      },
+      {
+        "command": "bcTestRunner.clearCredentials",
+        "title": "BC Test Runner: Clear Stored Credentials"
+      },
+      {
+        "command": "bcTestRunner.cancelRun",
+        "title": "BC Test Runner: Cancel Running Tests",
+        "icon": "$(debug-stop)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "bcTestRunner.runTests",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorLangId == al"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "bcTestRunner.cancelRun",
+          "when": "bcTestRunner.isRunning"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "bcTestRunner",
+          "title": "BC Test Runner",
+          "icon": "resources/icons/test-runner.svg"
+        }
+      ]
+    },
+    "views": {
+      "bcTestRunner": [
+        {
+          "id": "bcTestRunner.results",
+          "name": "Test Results",
+          "icon": "$(testing-passed-icon)"
+        },
+        {
+          "id": "bcTestRunner.environments",
+          "name": "Environments",
+          "icon": "$(server-environment)"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "BC Test Runner",
+      "properties": {
+        "bcTestRunner.powershellPath": {
+          "type": "string",
+          "default": "pwsh",
+          "description": "Path to PowerShell executable (pwsh or powershell)"
+        },
+        "bcTestRunner.defaultTimeout": {
+          "type": "number",
+          "default": 600000,
+          "description": "Default timeout for test operations in milliseconds (default: 10 minutes)"
+        },
+        "bcTestRunner.autoOpenReport": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open HTML report after test run"
+        },
+        "bcTestRunner.showProgressNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show progress notifications during test execution"
+        }
+      }
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": "bctest.config.json",
+        "url": "./schemas/bctest.config.schema.json"
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "bc-test-run",
+        "displayName": "Run BC Tests",
+        "modelDescription": "Execute full Business Central test pipeline: compile apps, publish to container, run tests, and return results. Use this for complete test iteration cycles.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environment": {
+              "type": "string",
+              "description": "Environment name from bctest.config.json. If not specified, uses defaultEnvironment."
+            },
+            "skipCompile": {
+              "type": "boolean",
+              "description": "Skip compilation phase if apps are already compiled.",
+              "default": false
+            },
+            "skipPublish": {
+              "type": "boolean",
+              "description": "Skip publishing phase if apps are already published.",
+              "default": false
+            }
+          }
+        }
+      },
+      {
+        "name": "bc-test-compile",
+        "displayName": "Compile BC Apps",
+        "modelDescription": "Compile Business Central AL apps. Returns compilation success/failure with detailed error messages including file paths and line numbers.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environment": {
+              "type": "string",
+              "description": "Environment name for container selection."
+            },
+            "apps": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Specific app folder names to compile. If not specified, compiles all apps from config."
+            }
+          }
+        }
+      },
+      {
+        "name": "bc-test-publish",
+        "displayName": "Publish BC Apps",
+        "modelDescription": "Publish compiled .app files to Business Central container. Returns publish status and sync results.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environment": {
+              "type": "string",
+              "description": "Environment name for container selection."
+            }
+          }
+        }
+      },
+      {
+        "name": "bc-test-execute",
+        "displayName": "Execute BC Tests",
+        "modelDescription": "Run tests in Business Central container (assumes apps are already published). Returns detailed test results with pass/fail status, durations, and failure details.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "environment": {
+              "type": "string",
+              "description": "Environment name for container selection."
+            },
+            "codeunitFilter": {
+              "type": "string",
+              "description": "Filter for specific codeunit IDs (e.g., '80002' or '80000..80010')."
+            },
+            "testMethod": {
+              "type": "string",
+              "description": "Specific test method name to run."
+            }
+          }
+        }
+      },
+      {
+        "name": "bc-test-results",
+        "displayName": "Get BC Test Results",
+        "modelDescription": "Read the latest test results from output folder. Returns structured JSON with test summary, failures, and suggested actions.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "resultFile": {
+              "type": "string",
+              "description": "Specific result file to read. If not specified, returns latest results."
+            }
+          }
+        }
+      },
+      {
+        "name": "bc-test-config",
+        "displayName": "Get BC Test Configuration",
+        "modelDescription": "Read bctest.config.json and list available environments, apps, and current settings.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "pnpm compile && pnpm lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package --out dist/"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.95.0",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.56.0",
+    "mocha": "^10.2.0",
+    "typescript": "^5.3.3"
+  }
+}

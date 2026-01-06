@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://business-solutions.com/schemas/bctest.config.schema.json",
+  "title": "BC Test Runner Configuration",
+  "description": "Configuration file for BC Test Runner VSCode extension and PowerShell module",
+  "type": "object",
+  "required": ["defaultEnvironment", "testApp", "environments"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for IntelliSense support"
+    },
+    "workspacePath": {
+      "type": "string",
+      "description": "Relative path to workspace root from config file location",
+      "default": "../"
+    },
+    "defaultEnvironment": {
+      "type": "string",
+      "description": "Name of the default environment to use when none is specified",
+      "minLength": 1
+    },
+    "apps": {
+      "type": "array",
+      "description": "List of app folder names to compile, in dependency order",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "default": ["App", "TestApp"]
+    },
+    "testApp": {
+      "type": "object",
+      "description": "Configuration for the test application",
+      "required": ["path", "extensionId", "extensionName"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative path to test app folder",
+          "minLength": 1
+        },
+        "extensionId": {
+          "type": "string",
+          "description": "GUID of the test extension",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        },
+        "extensionName": {
+          "type": "string",
+          "description": "Display name of the test extension",
+          "minLength": 1
+        },
+        "testCodeunitRange": {
+          "type": "string",
+          "description": "Codeunit ID filter for test execution (e.g., '80000..80099' or '80002')",
+          "pattern": "^[0-9]+(\\.\\.)?[0-9]*$",
+          "default": "80000..80099"
+        }
+      }
+    },
+    "environments": {
+      "type": "array",
+      "description": "List of available target environments",
+      "items": {
+        "$ref": "#/$defs/environment"
+      },
+      "minItems": 1
+    },
+    "output": {
+      "type": "object",
+      "description": "Output settings for test results",
+      "properties": {
+        "resultsFolder": {
+          "type": "string",
+          "description": "Relative path for test results output",
+          "default": "TestApp/.testresults"
+        },
+        "customDirectory": {
+          "type": "string",
+          "description": "Absolute path to custom output directory (overrides resultsFolder)"
+        },
+        "keepHistoryCount": {
+          "type": "integer",
+          "description": "Number of historical test result files to keep",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10
+        },
+        "formats": {
+          "type": "array",
+          "description": "Output formats to generate",
+          "items": {
+            "type": "string",
+            "enum": ["json", "xml", "html"]
+          },
+          "default": ["json", "xml", "html"]
+        },
+        "includePassedTests": {
+          "type": "boolean",
+          "description": "Include passed tests in detailed output (reduces file size if false)",
+          "default": true
+        }
+      }
+    },
+    "compilation": {
+      "type": "object",
+      "description": "Compilation settings",
+      "properties": {
+        "enableCodeCop": {
+          "type": "boolean",
+          "description": "Enable CodeCop analyzer",
+          "default": true
+        },
+        "enableAppSourceCop": {
+          "type": "boolean",
+          "description": "Enable AppSourceCop analyzer",
+          "default": true
+        },
+        "enablePerTenantExtensionCop": {
+          "type": "boolean",
+          "description": "Enable PerTenantExtensionCop analyzer",
+          "default": true
+        },
+        "enableUICop": {
+          "type": "boolean",
+          "description": "Enable UICop analyzer",
+          "default": true
+        },
+        "treatWarningsAsErrors": {
+          "type": "boolean",
+          "description": "Treat compiler warnings as errors",
+          "default": false
+        }
+      }
+    },
+    "testExecution": {
+      "type": "object",
+      "description": "Test execution settings",
+      "properties": {
+        "timeout": {
+          "type": "integer",
+          "description": "Timeout for test execution in seconds",
+          "minimum": 30,
+          "maximum": 3600,
+          "default": 600
+        },
+        "retryFailedTests": {
+          "type": "boolean",
+          "description": "Retry failed tests once before marking as failed",
+          "default": false
+        },
+        "parallelExecution": {
+          "type": "boolean",
+          "description": "Enable parallel test execution (if supported)",
+          "default": false
+        }
+      }
+    }
+  },
+  "$defs": {
+    "environment": {
+      "type": "object",
+      "description": "Target environment configuration",
+      "required": ["name", "type", "containerName", "server", "serverInstance", "authentication"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for this environment",
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_-]+$"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the environment"
+        },
+        "type": {
+          "type": "string",
+          "description": "Environment type",
+          "enum": ["docker", "server"]
+        },
+        "containerName": {
+          "type": "string",
+          "description": "Docker container name",
+          "minLength": 1
+        },
+        "server": {
+          "type": "string",
+          "description": "Server URL (e.g., http://localhost or http://containername)",
+          "pattern": "^https?://.+"
+        },
+        "serverInstance": {
+          "type": "string",
+          "description": "BC server instance name",
+          "default": "BC"
+        },
+        "authentication": {
+          "type": "string",
+          "description": "Authentication method",
+          "enum": ["UserPassword", "Windows", "NavUserPassword"]
+        },
+        "syncMode": {
+          "type": "string",
+          "description": "App synchronization mode",
+          "enum": ["Add", "Clean", "Development", "ForceSync"],
+          "default": "ForceSync"
+        },
+        "tenant": {
+          "type": "string",
+          "description": "Tenant ID for multi-tenant environments",
+          "default": "default"
+        }
+      }
+    }
+  }
+}
