@@ -259,7 +259,7 @@ export class PowerShellRunner {
         `;
 
     const result = await this.executeRaw(script, { timeout: 30000 });
-    return this.parseJsonResult<BCTestConfig>(result);
+    return this.parseJsonFromStdout<BCTestConfig>(result);
   }
 
   /**
@@ -302,7 +302,7 @@ export class PowerShellRunner {
         `;
 
     const result = await this.executeRaw(script, { timeout: 30000 });
-    return this.parseJsonResult<AITestResults>(result);
+    return this.parseJsonFromStdout<AITestResults>(result);
   }
 
   /**
@@ -406,21 +406,13 @@ export class PowerShellRunner {
   }
 
   /**
-   * Parse JSON result from PowerShell temp file
+   * Parse JSON from stdout (for simple commands that don't use temp files)
    */
-  private parseJsonResult<T>(
-    result: PowerShellResult<string>,
-    tempFilePath?: string
+  private parseJsonFromStdout<T>(
+    result: PowerShellResult<string>
   ): PowerShellResult<T> {
+    // Handle cancellation
     if (result.cancelled) {
-      // Clean up temp file on cancellation
-      if (tempFilePath && fs.existsSync(tempFilePath)) {
-        try {
-          fs.unlinkSync(tempFilePath);
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
       return {
         success: false,
         error: "Operation was cancelled",
@@ -429,15 +421,8 @@ export class PowerShellRunner {
       };
     }
 
+    // If PowerShell process failed, return the error
     if (!result.success) {
-      // Clean up temp file on PowerShell execution failure
-      if (tempFilePath && fs.existsSync(tempFilePath)) {
-        try {
-          fs.unlinkSync(tempFilePath);
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
       return {
         success: false,
         error: result.error ?? "PowerShell execution failed",
@@ -446,89 +431,163 @@ export class PowerShellRunner {
       };
     }
 
-    // If we have a temp file path, read from it
-    if (tempFilePath) {
-      try {
-        if (!fs.existsSync(tempFilePath)) {
-          // Check stdout for ##RESULT_WRITTEN## marker
-          if (result.data?.includes("##RESULT_WRITTEN##")) {
-            return {
-              success: false,
-              error:
-                "PowerShell indicated result was written but temp file not found",
-              duration: result.duration,
-              cancelled: false,
-            };
-          }
-          // Fall through to parse from stdout if no marker
-        } else {
-          const fileContent = fs.readFileSync(tempFilePath, "utf8");
-
-          // Clean up temp file after reading
-          try {
-            fs.unlinkSync(tempFilePath);
-          } catch {
-            // Ignore cleanup errors
-          }
-
-          const parsed = JSON.parse(fileContent);
-
-          if (parsed.Success === false) {
-            return {
-              success: false,
-              error: parsed.Error,
-              errorDetails: {
-                message: parsed.Error,
-                type: parsed.Type,
-                scriptStackTrace: parsed.StackTrace,
-                targetObject: parsed.TargetObject,
-                fullyQualifiedErrorId: parsed.FullyQualifiedErrorId,
-              },
-              duration: result.duration,
-              cancelled: false,
-            };
-          }
-
-          return {
-            success: true,
-            data: parsed.Data as T,
-            duration: result.duration,
-            cancelled: false,
-          };
-        }
-      } catch (e) {
-        this.outputChannel.appendLine(
-          `[ERROR] Failed to read/parse temp file: ${
-            e instanceof Error ? e.message : String(e)
-          }`
-        );
+    // Parse the stdout as JSON
+    try {
+      const output = (result.data || "").trim();
+      if (!output) {
         return {
           success: false,
-          error: `Failed to parse result file: ${
-            e instanceof Error ? e.message : String(e)
-          }`,
+          error: "No output from PowerShell",
           duration: result.duration,
           cancelled: false,
         };
       }
-    }
 
-    // Fallback: try to parse from stdout (for backward compatibility or if file approach fails)
-    if (!result.data) {
+      const parsed = JSON.parse(output);
+
+      // Check if PowerShell returned an error
+      if (parsed.Success === false) {
+        return {
+          success: false,
+          error: parsed.Error || "PowerShell returned an error",
+          errorDetails: {
+            message: parsed.Error,
+            type: parsed.Type,
+            scriptStackTrace: parsed.StackTrace,
+          },
+          duration: result.duration,
+          cancelled: false,
+        };
+      }
+
+      // Success - return the data
+      return {
+        success: true,
+        data: parsed.Data as T,
+        duration: result.duration,
+        cancelled: false,
+      };
+    } catch (e) {
+      const error = e instanceof Error ? e : new Error(String(e));
       return {
         success: false,
-        error: "No data returned from PowerShell",
+        error: `Failed to parse PowerShell output: ${error.message}`,
+        duration: result.duration,
+        cancelled: false,
+      };
+    }
+  }
+
+  /**
+   * Parse JSON result from PowerShell temp file
+   * IMPORTANT: This method ONLY reads from the temp file and completely ignores stdout
+   */
+  private parseJsonResult<T>(
+    result: PowerShellResult<string>,
+    tempFilePath?: string
+  ): PowerShellResult<T> {
+    // Handle cancellation
+    if (result.cancelled) {
+      this.cleanupTempFile(tempFilePath);
+      return {
+        success: false,
+        error: "Operation was cancelled",
+        duration: result.duration,
+        cancelled: true,
+      };
+    }
+
+    // If PowerShell process failed, return the error
+    if (!result.success) {
+      this.cleanupTempFile(tempFilePath);
+      return {
+        success: false,
+        error: result.error ?? "PowerShell execution failed",
         duration: result.duration,
         cancelled: false,
       };
     }
 
+    // CRITICAL: We must have a temp file path. Never fall back to stdout.
+    if (!tempFilePath) {
+      this.outputChannel.appendLine(
+        "[ERROR] No temp file path provided - cannot parse results"
+      );
+      return {
+        success: false,
+        error: "Internal error: No result file path provided",
+        duration: result.duration,
+        cancelled: false,
+      };
+    }
+
+    // Wait a bit for file to be written (PowerShell might still be flushing)
+    let retries = 0;
+    const maxRetries = 10;
+    while (!fs.existsSync(tempFilePath) && retries < maxRetries) {
+      retries++;
+      // Sleep for 50ms
+      const start = Date.now();
+      while (Date.now() - start < 50) {
+        // Busy wait
+      }
+    }
+
+    // Check if file exists
+    if (!fs.existsSync(tempFilePath)) {
+      this.outputChannel.appendLine(
+        `[ERROR] Temp file not found after ${retries} retries: ${tempFilePath}`
+      );
+      this.outputChannel.appendLine(
+        "[DEBUG] PowerShell may have failed to write results file"
+      );
+      return {
+        success: false,
+        error: `Result file not found: ${tempFilePath}. PowerShell failed to write results.`,
+        duration: result.duration,
+        cancelled: false,
+      };
+    }
+
+    // Read and parse the JSON file
     try {
-      const parsed = JSON.parse(result.data);
+      const fileContent = fs.readFileSync(tempFilePath, "utf8").trim();
+
+      // Log for debugging
+      this.outputChannel.appendLine(
+        `[DEBUG] Read ${fileContent.length} bytes from result file`
+      );
+
+      // Validate it's JSON before parsing
+      if (!fileContent.startsWith("{") && !fileContent.startsWith("[")) {
+        this.outputChannel.appendLine(
+          `[ERROR] Result file does not contain valid JSON. First 200 chars: ${fileContent.substring(
+            0,
+            200
+          )}`
+        );
+        this.cleanupTempFile(tempFilePath);
+        return {
+          success: false,
+          error: `Result file contains invalid JSON: ${fileContent.substring(
+            0,
+            100
+          )}...`,
+          duration: result.duration,
+          cancelled: false,
+        };
+      }
+
+      const parsed = JSON.parse(fileContent);
+
+      // Clean up temp file after successful read
+      this.cleanupTempFile(tempFilePath);
+
+      // Check if PowerShell returned an error
       if (parsed.Success === false) {
         return {
           success: false,
-          error: parsed.Error,
+          error: parsed.Error || "PowerShell returned an error",
           errorDetails: {
             message: parsed.Error,
             type: parsed.Type,
@@ -540,6 +599,8 @@ export class PowerShellRunner {
           cancelled: false,
         };
       }
+
+      // Success - return the data
       return {
         success: true,
         data: parsed.Data as T,
@@ -547,22 +608,47 @@ export class PowerShellRunner {
         cancelled: false,
       };
     } catch (e) {
+      const error = e instanceof Error ? e : new Error(String(e));
       this.outputChannel.appendLine(
-        `[ERROR] Failed to parse PowerShell output: ${
-          e instanceof Error ? e.message : String(e)
-        }`
+        `[ERROR] Failed to read/parse result file: ${error.message}`
       );
-      this.outputChannel.appendLine(
-        `[DEBUG] Output (first 500 chars): ${result.data?.substring(0, 500)}`
-      );
+      this.outputChannel.appendLine(`[DEBUG] File path: ${tempFilePath}`);
+
+      // Try to read raw content for debugging
+      try {
+        const rawContent = fs.readFileSync(tempFilePath, "utf8");
+        this.outputChannel.appendLine(
+          `[DEBUG] Raw file content (first 500 chars): ${rawContent.substring(
+            0,
+            500
+          )}`
+        );
+      } catch {
+        this.outputChannel.appendLine(
+          "[DEBUG] Could not read raw file content"
+        );
+      }
+
+      this.cleanupTempFile(tempFilePath);
       return {
         success: false,
-        error: `Failed to parse PowerShell output: ${
-          e instanceof Error ? e.message : String(e)
-        }`,
+        error: `Failed to parse result file: ${error.message}`,
         duration: result.duration,
         cancelled: false,
       };
+    }
+  }
+
+  /**
+   * Clean up temporary file
+   */
+  private cleanupTempFile(tempFilePath?: string): void {
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch {
+        // Ignore cleanup errors
+      }
     }
   }
 
