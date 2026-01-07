@@ -21,7 +21,32 @@
 $script:ModuleRoot = $PSScriptRoot
 $script:ConfigFileName = 'bctest.config.json'
 
+# Disable all color/ANSI output to prevent parsing issues
+$PSStyle.OutputRendering = 'PlainText'
+# Note: $Host.UI.SupportsVirtualTerminal is read-only, cannot set it
+
 #region Helper Functions
+
+function Write-ProgressUpdate {
+    <#
+    .SYNOPSIS
+        Writes a progress update marker to stdout for parsing by Node.js.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Stage,
+        
+        [Parameter(Mandatory)]
+        [int]$Progress,
+        
+        [Parameter(Mandatory)]
+        [string]$Message
+    )
+    
+    Write-Host "[PROGRESS:${Stage}:${Progress}:${Message}]"
+}
+
 
 function Get-BCTestRunnerConfig {
     <#
@@ -139,36 +164,6 @@ function Initialize-TestResultsFolder {
     return (Resolve-Path $resultsPath).Path
 }
 
-function Write-ProgressUpdate {
-    <#
-    .SYNOPSIS
-        Writes progress updates in a format parseable by the VSCode extension.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$Activity,
-        
-        [Parameter()]
-        [string]$Status,
-        
-        [Parameter()]
-        [int]$PercentComplete = -1,
-        
-        [Parameter()]
-        [string]$CurrentOperation
-    )
-    
-    $progress = @{
-        activity = $Activity
-        status = $Status
-        percentComplete = $PercentComplete
-        currentOperation = $CurrentOperation
-    }
-    
-    Write-Host "##PROGRESS##$($progress | ConvertTo-Json -Compress)##"
-}
-
 function ConvertTo-PSCredentialFromJson {
     <#
     .SYNOPSIS
@@ -251,26 +246,26 @@ function Get-ParsedStackTrace {
     [CmdletBinding()]
     param(
         [Parameter()]
-        [string]$StackTrace,
+        [string]$StackTraceText,
         
         [Parameter()]
         [string]$WorkspacePath
     )
     
-    if (-not $StackTrace) {
+    if (-not $StackTraceText) {
         return $null
     }
     
     # Pattern for AL stack traces: CodeunitName(CodeunitId).MethodName line XX
     $pattern = '(?<codeunit>[^(]+)\((?<id>\d+)\)\.(?<method>\w+)\s+line\s+(?<line>\d+)'
     
-    $match = [regex]::Match($StackTrace, $pattern)
+    $regexMatch = [regex]::Match($StackTraceText, $pattern)
     
-    if ($match.Success) {
-        $codeunitName = $match.Groups['codeunit'].Value.Trim()
-        $codeunitId = $match.Groups['id'].Value
-        $methodName = $match.Groups['method'].Value
-        $lineNumber = [int]$match.Groups['line'].Value
+    if ($regexMatch.Success) {
+        $codeunitName = $regexMatch.Groups['codeunit'].Value.Trim()
+        $codeunitId = $regexMatch.Groups['id'].Value
+        $methodName = $regexMatch.Groups['method'].Value
+        $lineNumber = [int]$regexMatch.Groups['line'].Value
         
         # Try to find the actual file
         $possibleFileName = "$codeunitName.Codeunit.al"
@@ -368,8 +363,7 @@ function Compile-ALApp {
         $appJson = Get-Content $appJsonPath -Raw | ConvertFrom-Json
         $symbolsPath = Join-Path $AppProjectFolder 'symbols'
         
-        Write-Host "Compiling app: $($appJson.name) v$($appJson.version)" -ForegroundColor Cyan
-        Write-ProgressUpdate -Activity "Compiling" -Status "Compiling $($appJson.name)" -PercentComplete 50
+        Write-Host "Compiling app: $($appJson.name) v$($appJson.version)"
         
         # Build compilation parameters
         $compileParams = @{
@@ -407,8 +401,7 @@ function Compile-ALApp {
         $result.AppFile = $appFile
         $result.Success = $true
         
-        Write-Host "Successfully compiled: $appFile" -ForegroundColor Green
-        Write-ProgressUpdate -Activity "Compiling" -Status "Completed $($appJson.name)" -PercentComplete 100
+        Write-Host "Successfully compiled: $appFile"
     }
     catch {
         $result.ErrorMessage = $_.Exception.Message
@@ -418,7 +411,7 @@ function Compile-ALApp {
         $result.Errors = $parsed.errors
         $result.Warnings = $parsed.warnings
         
-        Write-Host "Compilation failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Compilation failed: $($_.Exception.Message)"
     }
     finally {
         $stopwatch.Stop()
@@ -488,8 +481,7 @@ function Publish-BCApp {
             throw "App file not found: $AppFile"
         }
         
-        Write-Host "Publishing app: $AppFile" -ForegroundColor Cyan
-        Write-ProgressUpdate -Activity "Publishing" -Status "Publishing $(Split-Path $AppFile -Leaf)" -PercentComplete 50
+        Write-Host "Publishing app: $AppFile"
         
         $publishParams = @{
             containerName    = $ContainerName
@@ -507,12 +499,11 @@ function Publish-BCApp {
         Publish-BcContainerApp @publishParams
         
         $result.Success = $true
-        Write-Host "Successfully published app" -ForegroundColor Green
-        Write-ProgressUpdate -Activity "Publishing" -Status "Completed" -PercentComplete 100
+        Write-Host "Successfully published app"
     }
     catch {
         $result.ErrorMessage = $_.Exception.Message
-        Write-Host "Publish failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Publish failed: $($_.Exception.Message)"
     }
     finally {
         $stopwatch.Stop()
@@ -594,8 +585,7 @@ function Invoke-BCTests {
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     
     try {
-        Write-Host "Running tests in container: $ContainerName" -ForegroundColor Cyan
-        Write-ProgressUpdate -Activity "Testing" -Status "Executing tests" -PercentComplete 20
+        Write-Host "Running tests in container: $ContainerName"
         
         $runTestsParams = @{
             containerName         = $ContainerName
@@ -628,7 +618,6 @@ function Invoke-BCTests {
             $result.ResultsFile = $TestResultsFile
         }
         
-        Write-ProgressUpdate -Activity "Testing" -Status "Running tests in container" -PercentComplete 50
         
         $testResults = Run-TestsInBcContainer @runTestsParams
         
@@ -638,7 +627,6 @@ function Invoke-BCTests {
             Copy-Item -Path $tempResultsFile -Destination $TestResultsFile -Force
             Remove-Item -Path $tempResultsFile -Force -ErrorAction SilentlyContinue
             
-            Write-ProgressUpdate -Activity "Testing" -Status "Parsing results" -PercentComplete 80
             
             [xml]$xunitResults = Get-Content $TestResultsFile
             
@@ -684,7 +672,7 @@ function Invoke-BCTests {
                         }
                         
                         # Parse stack trace for file/line info
-                        $stackInfo = Get-ParsedStackTrace -StackTrace $test.failure.'stack-trace' -WorkspacePath $WorkspacePath
+                        $stackInfo = Get-ParsedStackTrace -StackTraceText $test.failure.'stack-trace' -WorkspacePath $WorkspacePath
                         if ($stackInfo) {
                             $failureInfo.FilePath = $stackInfo.filePath
                             $failureInfo.LineNumber = $stackInfo.lineNumber
@@ -698,18 +686,17 @@ function Invoke-BCTests {
         
         $result.Success = ($result.FailedTests -eq 0) -and ($result.TotalTests -gt 0)
         
-        Write-ProgressUpdate -Activity "Testing" -Status "Complete" -PercentComplete 100
         
         if ($result.Success) {
-            Write-Host "All tests passed! ($($result.PassedTests)/$($result.TotalTests))" -ForegroundColor Green
+            Write-Host "All tests passed! ($($result.PassedTests)/$($result.TotalTests))"
         }
         else {
-            Write-Host "Tests completed with failures: $($result.FailedTests) failed, $($result.PassedTests) passed" -ForegroundColor Yellow
+            Write-Host "Tests completed with failures: $($result.FailedTests) failed, $($result.PassedTests) passed"
         }
     }
     catch {
         $result.ErrorMessage = $_.Exception.Message
-        Write-Host "Test execution failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Test execution failed: $($_.Exception.Message)"
     }
     finally {
         $stopwatch.Stop()
@@ -907,7 +894,7 @@ function Export-TestResultsForAI {
     # Write output
     $output | ConvertTo-Json -Depth 20 | Out-File -FilePath $OutputPath -Encoding utf8
     
-    Write-Host "Test results exported to: $OutputPath" -ForegroundColor Green
+    Write-Host "Test results exported to: $OutputPath"
     
     return $OutputPath
 }
@@ -1158,24 +1145,29 @@ function Invoke-BCTestRunner {
     
     $overallStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "  BC Test Runner - Starting Execution  " -ForegroundColor Cyan
-    Write-Host "========================================`n" -ForegroundColor Cyan
+    # Ensure no ANSI codes
+    $PSStyle.OutputRendering = 'PlainText'
+    # Note: $Host.UI.SupportsVirtualTerminal is read-only, cannot set it
     
-    Write-ProgressUpdate -Activity "Initializing" -Status "Loading configuration" -PercentComplete 5
+    Write-Host "`n========================================"
+    Write-Host "  BC Test Runner - Starting Execution  "
+    Write-Host "========================================`n"
+    
+    Write-ProgressUpdate -Stage "init" -Progress 0 -Message "Initializing"
     
     # Load configuration
-    Write-Host "Loading configuration..." -ForegroundColor Gray
+    Write-Host "Loading configuration..."
+    Write-ProgressUpdate -Stage "config" -Progress 5 -Message "Loading configuration"
     $config = Get-BCTestRunnerConfig -ConfigPath $ConfigPath -EnvironmentName $EnvironmentName
     $env = $config.selectedEnvironment
     
-    Write-Host "Environment: $($env.name)" -ForegroundColor White
-    Write-Host "Server: $($env.server)/$($env.serverInstance)" -ForegroundColor White
-    Write-Host "Authentication: $($env.authentication)`n" -ForegroundColor White
+    Write-Host "Environment: $($env.name)"
+    Write-Host "Server: $($env.server)/$($env.serverInstance)"
+    Write-Host "Authentication: $($env.authentication)`n"
     
     # Get credentials if needed
     if ($env.authentication -eq 'UserPassword' -and -not $Credential) {
-        Write-Host "UserPassword authentication required. Please enter credentials:" -ForegroundColor Yellow
+        Write-Host "UserPassword authentication required. Please enter credentials:"
         $Credential = Get-Credential -Message "Enter credentials for $($env.server)"
     }
     
@@ -1188,7 +1180,7 @@ function Invoke-BCTestRunner {
         '.testresults' 
     }
     $resultsPath = Initialize-TestResultsFolder -WorkspacePath $config.workspacePath -ResultsFolder $resultsFolder -CustomDirectory $config.output.customDirectory
-    Write-Host "Results will be saved to: $resultsPath" -ForegroundColor Gray
+    Write-Host "Results will be saved to: $resultsPath"
     
     $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $testResultsXml = Join-Path $resultsPath "TestResults_$timestamp.xml"
@@ -1200,8 +1192,8 @@ function Invoke-BCTestRunner {
     
     # Compile apps
     if (-not $SkipCompile) {
-        Write-Host "`n--- Compilation Phase ---`n" -ForegroundColor Cyan
-        Write-ProgressUpdate -Activity "Compilation" -Status "Starting compilation" -PercentComplete 10
+        Write-Host "`n--- Compilation Phase ---`n"
+        Write-ProgressUpdate -Stage "compile" -Progress 10 -Message "Starting compilation"
         
         $appCount = $config.apps.Count
         $appIndex = 0
@@ -1209,7 +1201,7 @@ function Invoke-BCTestRunner {
         foreach ($appPath in $config.apps) {
             $appIndex++
             $progress = 10 + (($appIndex / $appCount) * 30)
-            Write-ProgressUpdate -Activity "Compilation" -Status "Compiling app $appIndex of $appCount" -PercentComplete $progress
+            Write-ProgressUpdate -Stage "compile" -Progress $progress -Message "Compiling app $appIndex of $appCount"
             
             $fullAppPath = if ([System.IO.Path]::IsPathRooted($appPath)) { 
                 $appPath 
@@ -1226,7 +1218,7 @@ function Invoke-BCTestRunner {
             $compilationResults += $compileResult
             
             if (-not $compileResult.Success) {
-                Write-Host "Compilation failed. Stopping execution." -ForegroundColor Red
+                Write-Host "Compilation failed. Stopping execution."
                 break
             }
         }
@@ -1236,14 +1228,14 @@ function Invoke-BCTestRunner {
     $allCompiled = ($compilationResults | Where-Object { -not $_.Success }).Count -eq 0
     
     if (-not $SkipPublish -and ($allCompiled -or $SkipCompile)) {
-        Write-Host "`n--- Publishing Phase ---`n" -ForegroundColor Cyan
-        Write-ProgressUpdate -Activity "Publishing" -Status "Starting publish" -PercentComplete 45
+        Write-Host "`n--- Publishing Phase ---`n"
+        Write-ProgressUpdate -Stage "publish" -Progress 45 -Message "Starting publishing"
         
         $appIndex = 0
         foreach ($compResult in $compilationResults) {
             $appIndex++
             $progress = 45 + (($appIndex / $compilationResults.Count) * 20)
-            Write-ProgressUpdate -Activity "Publishing" -Status "Publishing app $appIndex of $($compilationResults.Count)" -PercentComplete $progress
+            Write-ProgressUpdate -Stage "publish" -Progress $progress -Message "Publishing app $appIndex of $($compilationResults.Count)"
             
             if ($compResult.AppFile -and (Test-Path $compResult.AppFile)) {
                 $publishResult = Publish-BCApp `
@@ -1253,7 +1245,7 @@ function Invoke-BCTestRunner {
                     -SyncMode $env.syncMode
                 
                 if (-not $publishResult.Success) {
-                    Write-Host "Publishing failed. Stopping execution." -ForegroundColor Red
+                    Write-Host "Publishing failed. Stopping execution."
                     break
                 }
             }
@@ -1261,8 +1253,8 @@ function Invoke-BCTestRunner {
     }
     
     # Run tests
-    Write-Host "`n--- Test Execution Phase ---`n" -ForegroundColor Cyan
-    Write-ProgressUpdate -Activity "Testing" -Status "Running tests" -PercentComplete 70
+    Write-Host "`n--- Test Execution Phase ---`n"
+    Write-ProgressUpdate -Stage "test" -Progress 70 -Message "Running tests"
     
     $testResults = Invoke-BCTests `
         -ContainerName $env.containerName `
@@ -1273,8 +1265,8 @@ function Invoke-BCTestRunner {
         -WorkspacePath $config.workspacePath
     
     # Export results
-    Write-Host "`n--- Exporting Results ---`n" -ForegroundColor Cyan
-    Write-ProgressUpdate -Activity "Exporting" -Status "Generating reports" -PercentComplete 90
+    Write-Host "`n--- Exporting Results ---`n"
+    Write-ProgressUpdate -Stage "export" -Progress 95 -Message "Exporting results"
     
     Export-TestResultsForAI `
         -OutputPath $aiResultsJson `
@@ -1282,18 +1274,18 @@ function Invoke-BCTestRunner {
         -CompilationResults $compilationResults `
         -TestResults $testResults
     
-    Write-ProgressUpdate -Activity "Complete" -Status "Finished" -PercentComplete 100
     
     $overallStopwatch.Stop()
+    Write-ProgressUpdate -Stage "complete" -Progress 100 -Message "Execution complete"
     
     # Summary
-    Write-Host "`n========================================" -ForegroundColor Cyan
-    Write-Host "           Execution Summary            " -ForegroundColor Cyan
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "Total Duration: $($overallStopwatch.Elapsed.ToString('hh\:mm\:ss'))" -ForegroundColor White
+    Write-Host "`n========================================"
+    Write-Host "           Execution Summary            "
+    Write-Host "========================================"
+    Write-Host "Total Duration: $($overallStopwatch.Elapsed.ToString('hh\:mm\:ss'))"
     Write-Host "Tests: $($testResults.PassedTests)/$($testResults.TotalTests) passed" -ForegroundColor $(if ($testResults.Success) { 'Green' } else { 'Yellow' })
-    Write-Host "AI Results: $aiResultsJson" -ForegroundColor White
-    Write-Host "========================================`n" -ForegroundColor Cyan
+    Write-Host "AI Results: $aiResultsJson"
+    Write-Host "========================================`n"
     
     return [PSCustomObject]@{
         Success            = $testResults.Success -and $allCompiled

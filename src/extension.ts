@@ -270,10 +270,10 @@ async function runTests(options: {
           skipPublish: options.skipPublish,
           credential,
           cancellationToken: token,
-          onProgress: (p) => {
+          onProgress: (update) => {
             progress.report({
-              message: `${p.activity}: ${p.status}`,
-              increment: p.percentComplete > 0 ? 5 : undefined,
+              message: update.status || update.activity,
+              increment: update.percentComplete,
             });
           },
         });
@@ -384,6 +384,8 @@ async function compileApps(): Promise<void> {
         cancellable: true,
       },
       async (progress, token) => {
+        progress.report({ message: "Compiling..." });
+
         const result = await runner.compileApps(
           configPath,
           env.name,
@@ -391,8 +393,11 @@ async function compileApps(): Promise<void> {
           {
             credential,
             cancellationToken: token,
-            onProgress: (p) => {
-              progress.report({ message: p.status });
+            onProgress: (update) => {
+              progress.report({
+                message: update.status || update.activity,
+                increment: update.percentComplete,
+              });
             },
           }
         );
@@ -448,11 +453,16 @@ async function publishApps(): Promise<void> {
         cancellable: true,
       },
       async (progress, token) => {
+        progress.report({ message: "Publishing..." });
+
         const result = await runner.publishApps(configPath, env.name, {
           credential,
           cancellationToken: token,
-          onProgress: (p) => {
-            progress.report({ message: p.status });
+          onProgress: (update) => {
+            progress.report({
+              message: update.status || update.activity,
+              increment: update.percentComplete,
+            });
           },
         });
 

@@ -21,7 +21,8 @@ export interface StoredCredential {
  * Uses VSCode's SecretStorage API for secure persistence
  */
 export class CredentialManager {
-  private static readonly KEY_PREFIX = "bcTestRunner.credential.";
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  private static readonly _KEY_PREFIX = "bcTestRunner.credential.";
   private _secretStorage: vscode.SecretStorage;
 
   constructor(context: vscode.ExtensionContext) {
@@ -32,7 +33,7 @@ export class CredentialManager {
    * Get the storage key for an environment
    */
   private _getKey(environmentName: string): string {
-    return `${CredentialManager.KEY_PREFIX}${environmentName}`;
+    return `${CredentialManager._KEY_PREFIX}${environmentName}`;
   }
 
   /**

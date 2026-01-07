@@ -19,10 +19,10 @@ export class EnvironmentTreeItem extends vscode.TreeItem {
     public readonly isDefault: boolean
   ) {
     super(environment.name, vscode.TreeItemCollapsibleState.None);
-    this.setupItem();
+    this._setupItem();
   }
 
-  private setupItem(): void {
+  private _setupItem(): void {
     // Set icon based on credential status
     if (this.environment.authentication === "Windows") {
       this.iconPath = new vscode.ThemeIcon("shield");
@@ -95,8 +95,8 @@ export class EnvironmentsTreeDataProvider
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   constructor(
-    private configManager: ConfigManager,
-    private credentialManager: CredentialManager
+    private _configManager: ConfigManager,
+    private _credentialManager: CredentialManager
   ) {}
 
   refresh(): void {
@@ -111,16 +111,16 @@ export class EnvironmentsTreeDataProvider
     _element?: EnvironmentTreeItem
   ): Promise<EnvironmentTreeItem[]> {
     try {
-      const configPath = await this.configManager.findConfigFile();
+      const configPath = await this._configManager.findConfigFile();
       if (!configPath) {
         return [];
       }
 
-      const config = await this.configManager.loadConfig(configPath);
+      const config = await this._configManager.loadConfig(configPath);
       const items: EnvironmentTreeItem[] = [];
 
       for (const env of config.environments) {
-        const hasCredentials = await this.credentialManager.hasCredential(
+        const hasCredentials = await this._credentialManager.hasCredential(
           env.name
         );
         const isDefault = env.name === config.defaultEnvironment;

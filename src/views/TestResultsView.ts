@@ -24,10 +24,10 @@ export class TestResultTreeItem extends vscode.TreeItem {
     public readonly category?: "summary" | "passed" | "failed" | "skipped"
   ) {
     super(label, collapsibleState);
-    this.setupItem();
+    this._setupItem();
   }
 
-  private setupItem(): void {
+  private _setupItem(): void {
     if (this.category === "summary") {
       this.contextValue = "summary";
       return;
@@ -117,39 +117,39 @@ export class TestResultsTreeDataProvider
   >();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private results: AITestResults | null = null;
+  private _results: AITestResults | null = null;
 
   constructor(
-    private configManager: ConfigManager,
-    private runner: PowerShellRunner
+    private _configManager: ConfigManager,
+    private _runner: PowerShellRunner
   ) {
-    this.loadResults();
+    this._loadResults();
   }
 
   refresh(): void {
-    this.loadResults();
+    this._loadResults();
     this._onDidChangeTreeData.fire();
   }
 
-  private async loadResults(): Promise<void> {
+  private async _loadResults(): Promise<void> {
     try {
-      const configPath = await this.configManager.findConfigFile();
+      const configPath = await this._configManager.findConfigFile();
       if (!configPath) {
-        this.results = null;
+        this._results = null;
         return;
       }
 
-      const config = await this.configManager.loadConfig(configPath);
-      const resultsFolder = this.configManager.getResultsFolder(config);
+      const config = await this._configManager.loadConfig(configPath);
+      const resultsFolder = this._configManager.getResultsFolder(config);
 
-      const result = await this.runner.getLatestResults(resultsFolder);
+      const result = await this._runner.getLatestResults(resultsFolder);
       if (result.success && result.data) {
-        this.results = result.data;
+        this._results = result.data;
       } else {
-        this.results = null;
+        this._results = null;
       }
     } catch {
-      this.results = null;
+      this._results = null;
     }
   }
 
@@ -158,7 +158,7 @@ export class TestResultsTreeDataProvider
   }
 
   getChildren(element?: TestResultTreeItem): Thenable<TestResultTreeItem[]> {
-    if (!this.results) {
+    if (!this._results) {
       return Promise.resolve([
         new TestResultTreeItem(
           "No test results available",
@@ -169,29 +169,29 @@ export class TestResultsTreeDataProvider
 
     if (!element) {
       // Root level - show summary and categories
-      return Promise.resolve(this.getRootItems());
+      return Promise.resolve(this._getRootItems());
     }
 
     // Child items based on category
     if (element.category === "failed") {
-      return Promise.resolve(this.getFailedTests());
+      return Promise.resolve(this._getFailedTests());
     }
     if (element.category === "passed") {
-      return Promise.resolve(this.getPassedTests());
+      return Promise.resolve(this._getPassedTests());
     }
     if (element.category === "skipped") {
-      return Promise.resolve(this.getSkippedTests());
+      return Promise.resolve(this._getSkippedTests());
     }
 
     return Promise.resolve([]);
   }
 
-  private getRootItems(): TestResultTreeItem[] {
+  private _getRootItems(): TestResultTreeItem[] {
     const items: TestResultTreeItem[] = [];
-    const summary = this.results!.tests.summary;
+    const summary = this._results!.tests.summary;
 
     // Summary header
-    const summaryText = this.results!.tests.success
+    const summaryText = this._results!.tests.success
       ? `✓ All ${summary.total} tests passed`
       : `${summary.passed}/${summary.total} passed, ${summary.failed} failed`;
 
@@ -201,7 +201,7 @@ export class TestResultsTreeDataProvider
       undefined,
       "summary"
     );
-    summaryItem.iconPath = this.results!.tests.success
+    summaryItem.iconPath = this._results!.tests.success
       ? new vscode.ThemeIcon(
           "testing-passed-icon",
           new vscode.ThemeColor("testing.iconPassed")
@@ -210,7 +210,7 @@ export class TestResultsTreeDataProvider
           "testing-failed-icon",
           new vscode.ThemeColor("testing.iconFailed")
         );
-    summaryItem.description = `Duration: ${this.results!.tests.duration}`;
+    summaryItem.description = `Duration: ${this._results!.tests.duration}`;
     items.push(summaryItem);
 
     // Failed tests category
@@ -261,10 +261,12 @@ export class TestResultsTreeDataProvider
     return items;
   }
 
-  private getFailedTests(): TestResultTreeItem[] {
-    if (!this.results) return [];
+  private _getFailedTests(): TestResultTreeItem[] {
+    if (!this._results) {
+      return [];
+    }
 
-    return this.results.tests.failures.map((failure) => {
+    return this._results.tests.failures.map((failure) => {
       const label = `${failure.codeunit}.${failure.method}`;
       const item = new TestResultTreeItem(
         label,
@@ -275,10 +277,12 @@ export class TestResultsTreeDataProvider
     });
   }
 
-  private getPassedTests(): TestResultTreeItem[] {
-    if (!this.results) return [];
+  private _getPassedTests(): TestResultTreeItem[] {
+    if (!this._results) {
+      return [];
+    }
 
-    return this.results.tests.allTests
+    return this._results.tests.allTests
       .filter((test) => test.result === "Pass")
       .map((test) => {
         const label = `${test.codeunit}.${test.method}`;
@@ -291,10 +295,12 @@ export class TestResultsTreeDataProvider
       });
   }
 
-  private getSkippedTests(): TestResultTreeItem[] {
-    if (!this.results) return [];
+  private _getSkippedTests(): TestResultTreeItem[] {
+    if (!this._results) {
+      return [];
+    }
 
-    return this.results.tests.allTests
+    return this._results.tests.allTests
       .filter((test) => test.result === "Skip")
       .map((test) => {
         const label = `${test.codeunit}.${test.method}`;

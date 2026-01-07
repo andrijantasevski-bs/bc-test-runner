@@ -479,6 +479,7 @@ export class PowerShellRunner {
     );
 
     // Remove other control characters except newline (\n=10), carriage return (\r=13), tab (\t=9)
+    // eslint-disable-next-line no-control-regex
     result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
 
     return result;
@@ -667,7 +668,7 @@ export class PowerShellRunner {
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        script,
+        `$WarningPreference='SilentlyContinue'; $VerbosePreference='SilentlyContinue'; ${script} 3>$null`,
       ];
 
       this.outputChannel.appendLine(
@@ -785,8 +786,10 @@ export class PowerShellRunner {
           .replace(ansiRegex, "")
           .replace(oscRegex, "")
           // Also remove any remaining escape sequences
+          // eslint-disable-next-line no-control-regex
           .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "")
           // Remove standalone escape characters
+          // eslint-disable-next-line no-control-regex
           .replace(/[\x00-\x1F]/g, (char) =>
             char === "\n" || char === "\r" || char === "\t" ? char : ""
           )

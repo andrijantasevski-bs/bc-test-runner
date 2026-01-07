@@ -129,9 +129,9 @@ export class BCTestRunTool extends BCTestRunnerTool {
         skipPublish: params.skipPublish,
         credential,
         cancellationToken: token,
-        onProgress: (progress) => {
+        onProgress: (update) => {
           this.outputChannel.appendLine(
-            `[Progress] ${progress.activity}: ${progress.status} (${progress.percentComplete}%)`
+            `[${update.activity}] ${update.percentComplete}% - ${update.status}`
           );
         },
       });
@@ -267,9 +267,9 @@ export class BCTestCompileTool extends BCTestRunnerTool {
         {
           credential,
           cancellationToken: token,
-          onProgress: (progress) => {
+          onProgress: (update) => {
             this.outputChannel.appendLine(
-              `[Progress] ${progress.activity}: ${progress.status}`
+              `[${update.activity}] ${update.percentComplete}% - ${update.status}`
             );
           },
         }
@@ -370,9 +370,9 @@ export class BCTestPublishTool extends BCTestRunnerTool {
       const result = await this.runner.publishApps(configPath, envName, {
         credential,
         cancellationToken: token,
-        onProgress: (progress) => {
+        onProgress: (update) => {
           this.outputChannel.appendLine(
-            `[Progress] ${progress.activity}: ${progress.status}`
+            `[${update.activity}] ${update.percentComplete}% - ${update.status}`
           );
         },
       });
@@ -483,9 +483,9 @@ export class BCTestExecuteTool extends BCTestRunnerTool {
         codeunitFilter: params.codeunitFilter,
         testMethod: params.testMethod,
         cancellationToken: token,
-        onProgress: (progress) => {
+        onProgress: (update) => {
           this.outputChannel.appendLine(
-            `[Progress] ${progress.activity}: ${progress.status}`
+            `[${update.activity}] ${update.percentComplete}% - ${update.status}`
           );
         },
       });

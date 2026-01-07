@@ -25,7 +25,7 @@ export class ReportGenerator {
       .substring(0, 19);
     const outputPath = path.join(outputFolder, `TestReport_${timestamp}.html`);
 
-    const html = this.generateHtml(results);
+    const html = this._generateHtml(results);
     fs.writeFileSync(outputPath, html, "utf-8");
 
     return outputPath;
@@ -35,13 +35,13 @@ export class ReportGenerator {
    * Generate HTML for webview display
    */
   generateWebviewHtml(results: AITestResults): string {
-    return this.generateHtml(results, true);
+    return this._generateHtml(results, true);
   }
 
   /**
    * Generate the full HTML document
    */
-  private generateHtml(
+  private _generateHtml(
     results: AITestResults,
     isWebview: boolean = false
   ): string {
@@ -63,7 +63,7 @@ export class ReportGenerator {
       results.timestamp
     ).toLocaleString()}</title>
     <style>
-        ${this.getStyles()}
+        ${this._getStyles()}
     </style>
 </head>
 <body${isWebview ? ' class="vscode-body"' : ""}>
@@ -113,15 +113,15 @@ export class ReportGenerator {
     }</div>
         </section>
 
-        ${this.generateCompilationSection(results)}
-        ${this.generateFailuresSection(results)}
-        ${this.generateAllTestsSection(results)}
-        ${this.generateAIContextSection(results)}
-        ${this.generateEnvironmentSection(results)}
+        ${this._generateCompilationSection(results)}
+        ${this._generateFailuresSection(results)}
+        ${this._generateAllTestsSection(results)}
+        ${this._generateAIContextSection(results)}
+        ${this._generateEnvironmentSection(results)}
     </div>
 
     <script>
-        ${this.getScripts()}
+        ${this._getScripts()}
     </script>
 </body>
 </html>`;
@@ -130,7 +130,7 @@ export class ReportGenerator {
   /**
    * Generate compilation results section
    */
-  private generateCompilationSection(results: AITestResults): string {
+  private _generateCompilationSection(results: AITestResults): string {
     if (
       !results.compilation ||
       !results.compilation.apps ||
@@ -154,11 +154,11 @@ export class ReportGenerator {
                               .map(
                                 (e) => `
                                 <li class="compilation-error">
-                                    <code>${this.escapeHtml(e.file)}:${
+                                    <code>${this._escapeHtml(e.file)}:${
                                   e.line
                                 }:${e.column}</code>
                                     <span class="error-code">${e.code}</span>
-                                    <span class="error-msg">${this.escapeHtml(
+                                    <span class="error-msg">${this._escapeHtml(
                                       e.message
                                     )}</span>
                                 </li>
@@ -173,7 +173,7 @@ export class ReportGenerator {
         return `
                 <div class="app-result ${statusClass}">
                     <span class="status-icon">${status}</span>
-                    <span class="app-name">${this.escapeHtml(
+                    <span class="app-name">${this._escapeHtml(
                       path.basename(app.project)
                     )}</span>
                     <span class="duration">${app.duration}</span>
@@ -203,13 +203,13 @@ export class ReportGenerator {
   /**
    * Generate failures section
    */
-  private generateFailuresSection(results: AITestResults): string {
+  private _generateFailuresSection(results: AITestResults): string {
     if (results.tests.failures.length === 0) {
       return "";
     }
 
     const failures = results.tests.failures
-      .map((failure, index) => this.generateFailureCard(failure, index))
+      .map((failure, index) => this._generateFailureCard(failure, index))
       .join("");
 
     return `
@@ -227,11 +227,11 @@ export class ReportGenerator {
   /**
    * Generate a single failure card
    */
-  private generateFailureCard(failure: TestFailure, index: number): string {
+  private _generateFailureCard(failure: TestFailure, index: number): string {
     const locationHtml = failure.filePath
       ? `<div class="failure-location">
                 <span class="icon">📍</span>
-                <code>${this.escapeHtml(failure.filePath)}${
+                <code>${this._escapeHtml(failure.filePath)}${
           failure.lineNumber ? `:${failure.lineNumber}` : ""
         }</code>
                </div>`
@@ -241,28 +241,28 @@ export class ReportGenerator {
             <div class="failure-card" id="failure-${index}">
                 <div class="failure-header">
                     <span class="failure-number">#${index + 1}</span>
-                    <span class="failure-codeunit">${this.escapeHtml(
+                    <span class="failure-codeunit">${this._escapeHtml(
                       failure.codeunit
                     )}</span>
-                    <span class="failure-method">${this.escapeHtml(
+                    <span class="failure-method">${this._escapeHtml(
                       failure.method
                     )}</span>
                     <span class="failure-duration">${failure.duration}s</span>
                 </div>
-                <div class="failure-name">${this.escapeHtml(
+                <div class="failure-name">${this._escapeHtml(
                   failure.testName
                 )}</div>
                 ${locationHtml}
                 <div class="failure-error">
                     <strong>Error:</strong>
-                    <pre>${this.escapeHtml(failure.error)}</pre>
+                    <pre>${this._escapeHtml(failure.error)}</pre>
                 </div>
                 ${
                   failure.stackTrace
                     ? `
                     <details class="failure-stack">
                         <summary>Stack Trace</summary>
-                        <pre>${this.escapeHtml(failure.stackTrace)}</pre>
+                        <pre>${this._escapeHtml(failure.stackTrace)}</pre>
                     </details>
                 `
                     : ""
@@ -274,7 +274,7 @@ export class ReportGenerator {
   /**
    * Generate all tests section
    */
-  private generateAllTestsSection(results: AITestResults): string {
+  private _generateAllTestsSection(results: AITestResults): string {
     const tests = results.tests.allTests;
     if (tests.length === 0) {
       return "";
@@ -302,7 +302,7 @@ export class ReportGenerator {
             return `
                     <tr class="test-row ${statusClass}">
                         <td class="status-cell"><span class="status-icon">${statusIcon}</span></td>
-                        <td class="method-cell">${this.escapeHtml(
+                        <td class="method-cell">${this._escapeHtml(
                           test.method
                         )}</td>
                         <td class="duration-cell">${test.duration}s</td>
@@ -315,7 +315,7 @@ export class ReportGenerator {
                 <div class="codeunit-group">
                     <div class="codeunit-header" onclick="toggleCodeunit(this)">
                         <span class="expand-icon">▼</span>
-                        <span class="codeunit-name">${this.escapeHtml(
+                        <span class="codeunit-name">${this._escapeHtml(
                           codeunit
                         )}</span>
                         <span class="codeunit-stats">
@@ -352,19 +352,19 @@ export class ReportGenerator {
   /**
    * Generate AI context section
    */
-  private generateAIContextSection(results: AITestResults): string {
+  private _generateAIContextSection(results: AITestResults): string {
     if (!results.aiContext) {
       return "";
     }
 
     const hints =
       results.aiContext.analysisHints
-        ?.map((hint) => `<li>${this.escapeHtml(hint)}</li>`)
+        ?.map((hint) => `<li>${this._escapeHtml(hint)}</li>`)
         .join("") || "";
 
     const actions =
       results.aiContext.suggestedActions
-        ?.map((action) => `<li>${this.escapeHtml(action)}</li>`)
+        ?.map((action) => `<li>${this._escapeHtml(action)}</li>`)
         .join("") || "";
 
     return `
@@ -401,7 +401,7 @@ export class ReportGenerator {
   /**
    * Generate environment section
    */
-  private generateEnvironmentSection(results: AITestResults): string {
+  private _generateEnvironmentSection(results: AITestResults): string {
     return `
             <section class="section env-section">
                 <h2 class="section-title">
@@ -410,25 +410,25 @@ export class ReportGenerator {
                 <div class="env-details">
                     <div class="env-item">
                         <span class="env-label">Name:</span>
-                        <span class="env-value">${this.escapeHtml(
+                        <span class="env-value">${this._escapeHtml(
                           results.environment.name
                         )}</span>
                     </div>
                     <div class="env-item">
                         <span class="env-label">Server:</span>
-                        <span class="env-value">${this.escapeHtml(
+                        <span class="env-value">${this._escapeHtml(
                           results.environment.server
                         )}</span>
                     </div>
                     <div class="env-item">
                         <span class="env-label">Instance:</span>
-                        <span class="env-value">${this.escapeHtml(
+                        <span class="env-value">${this._escapeHtml(
                           results.environment.serverInstance
                         )}</span>
                     </div>
                     <div class="env-item">
                         <span class="env-label">Authentication:</span>
-                        <span class="env-value">${this.escapeHtml(
+                        <span class="env-value">${this._escapeHtml(
                           results.environment.authentication
                         )}</span>
                     </div>
@@ -440,7 +440,7 @@ export class ReportGenerator {
   /**
    * Get CSS styles
    */
-  private getStyles(): string {
+  private _getStyles(): string {
     return `
             :root {
                 --bg-color: #1e1e1e;
@@ -821,7 +821,7 @@ export class ReportGenerator {
   /**
    * Get JavaScript for interactivity
    */
-  private getScripts(): string {
+  private _getScripts(): string {
     return `
             function toggleCodeunit(header) {
                 header.classList.toggle('collapsed');
@@ -834,14 +834,16 @@ export class ReportGenerator {
   /**
    * Escape HTML special characters
    */
-  private escapeHtml(text: string): string {
-    const map: Record<string, string> = {
+  private _escapeHtml(text: string): string {
+    /* eslint-disable @typescript-eslint/naming-convention */
+    const htmlEscapeMap: Record<string, string> = {
       "&": "&amp;",
       "<": "&lt;",
       ">": "&gt;",
       '"': "&quot;",
       "'": "&#039;",
     };
-    return text.replace(/[&<>"']/g, (m) => map[m]);
+    /* eslint-enable @typescript-eslint/naming-convention */
+    return text.replace(/[&<>"']/g, (m) => htmlEscapeMap[m]);
   }
 }

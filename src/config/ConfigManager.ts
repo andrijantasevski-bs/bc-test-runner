@@ -8,10 +8,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
-import {
-  BCTestConfig,
-  BCTestEnvironment,
-} from "../powershell/PowerShellRunner";
+import { BCTestConfigSchema, BCTestConfig, BCTestEnvironment } from "./schemas";
 
 /**
  * Configuration manager for BC Test Runner
@@ -126,10 +123,10 @@ export class ConfigManager {
     }
 
     const content = fs.readFileSync(configPath, "utf-8");
-    let config: BCTestConfig;
+    let rawConfig: unknown;
 
     try {
-      config = JSON.parse(content) as BCTestConfig;
+      rawConfig = JSON.parse(content);
     } catch (e) {
       throw new Error(
         `Invalid JSON in configuration file: ${
@@ -138,8 +135,16 @@ export class ConfigManager {
       );
     }
 
-    // Validate required fields
-    this._validateConfig(config, configPath);
+    // Validate with Zod
+    const parseResult = BCTestConfigSchema.safeParse(rawConfig);
+    if (!parseResult.success) {
+      const errors = parseResult.error.issues
+        .map((err) => `${err.path.join(".")}: ${err.message}`)
+        .join("\n");
+      throw new Error(`Invalid configuration in ${configPath}:\n${errors}`);
+    }
+
+    const config = parseResult.data;
 
     // Resolve relative paths
     const configDir = path.dirname(configPath);
@@ -154,65 +159,6 @@ export class ConfigManager {
     this._cachedConfigPath = configPath;
 
     return config;
-  }
-
-  /**
-   * Validate configuration structure
-   */
-  private _validateConfig(config: BCTestConfig, configPath: string): void {
-    const errors: string[] = [];
-
-    if (!config.defaultEnvironment) {
-      errors.push("Missing required field: defaultEnvironment");
-    }
-
-    if (!config.testApp) {
-      errors.push("Missing required field: testApp");
-    } else {
-      if (!config.testApp.extensionId) {
-        errors.push("Missing required field: testApp.extensionId");
-      }
-      if (!config.testApp.extensionName) {
-        errors.push("Missing required field: testApp.extensionName");
-      }
-    }
-
-    if (!config.environments || config.environments.length === 0) {
-      errors.push(
-        "Missing required field: environments (must have at least one environment)"
-      );
-    } else {
-      config.environments.forEach((env, index) => {
-        if (!env.name) {
-          errors.push(`Environment ${index}: missing required field 'name'`);
-        }
-        if (!env.containerName) {
-          errors.push(
-            `Environment ${
-              env.name || index
-            }: missing required field 'containerName'`
-          );
-        }
-        if (!env.server) {
-          errors.push(
-            `Environment ${env.name || index}: missing required field 'server'`
-          );
-        }
-        if (!env.authentication) {
-          errors.push(
-            `Environment ${
-              env.name || index
-            }: missing required field 'authentication'`
-          );
-        }
-      });
-    }
-
-    if (errors.length > 0) {
-      throw new Error(
-        `Invalid configuration in ${configPath}:\n${errors.join("\n")}`
-      );
-    }
   }
 
   /**
