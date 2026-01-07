@@ -185,7 +185,7 @@ export class PowerShellRunner {
     options?: ExecutionOptions & {
       credential?: { username: string; password: string };
     }
-  ): Promise<PowerShellResult<TestRunResult>> {
+  ): Promise<PowerShellResult<AITestResults>> {
     const stdinData = {
       configPath,
       environmentName,
@@ -193,7 +193,7 @@ export class PowerShellRunner {
     };
 
     const script = this.buildInvokeScript("Invoke-BCTestRunnerFromJson");
-    return this.executeWithProgress<TestRunResult>(script, {
+    return this.executeWithProgress<AITestResults>(script, {
       ...options,
       stdinData,
     });
@@ -210,7 +210,7 @@ export class PowerShellRunner {
       codeunitFilter?: string;
       testMethod?: string;
     }
-  ): Promise<PowerShellResult<TestExecutionResult>> {
+  ): Promise<PowerShellResult<AITestResults>> {
     const stdinData = {
       configPath,
       environmentName,
@@ -221,7 +221,7 @@ export class PowerShellRunner {
     };
 
     const script = this.buildInvokeScript("Invoke-BCExecuteTestsFromJson");
-    return this.executeWithProgress<TestExecutionResult>(script, {
+    return this.executeWithProgress<AITestResults>(script, {
       ...options,
       stdinData,
     });
@@ -852,6 +852,7 @@ export interface AITestResults {
     analysisHints: string[];
     suggestedActions: string[];
   };
+  FilePath?: string; // Added by PowerShell when returning results
 }
 
 export interface BCTestConfig {

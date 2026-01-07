@@ -259,11 +259,12 @@ async function runTests(): Promise<void> {
         }
 
         if (result.success && result.data) {
-          const testResults = result.data.testResults;
-          if (testResults) {
-            const passed = testResults.summary?.passed ?? 0;
-            const failed = testResults.summary?.failed ?? 0;
-            const total = testResults.summary?.total ?? 0;
+          // result.data now contains the AI results object directly with 'tests' property
+          const tests = result.data.tests;
+          if (tests) {
+            const passed = tests.summary?.passed ?? 0;
+            const failed = tests.summary?.failed ?? 0;
+            const total = tests.summary?.total ?? 0;
 
             if (failed === 0) {
               updateStatusBar(
@@ -281,24 +282,19 @@ async function runTests(): Promise<void> {
           }
 
           // Generate HTML report if configured
-          if (result.data.aiResultsFile) {
-            const aiResults = await runner.getLatestResults(
-              configManager.getResultsFolder(config),
-              result.data.aiResultsFile
+          // result.data now has the FilePath property directly
+          if (result.data.FilePath) {
+            const htmlPath = await reportGenerator.generateReport(
+              result.data,
+              configManager.getResultsFolder(config)
             );
-            if (aiResults.success && aiResults.data) {
-              const htmlPath = await reportGenerator.generateReport(
-                aiResults.data,
-                configManager.getResultsFolder(config)
-              );
 
-              if (
-                vscode.workspace
-                  .getConfiguration("bcTestRunner")
-                  .get("autoOpenReport")
-              ) {
-                vscode.env.openExternal(vscode.Uri.file(htmlPath));
-              }
+            if (
+              vscode.workspace
+                .getConfiguration("bcTestRunner")
+                .get("autoOpenReport")
+            ) {
+              vscode.env.openExternal(vscode.Uri.file(htmlPath));
             }
           }
 

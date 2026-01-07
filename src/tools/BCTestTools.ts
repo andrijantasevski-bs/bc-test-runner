@@ -143,20 +143,13 @@ export class BCTestRunTool extends BCTestRunnerTool {
         ]);
       }
 
-      // Read the AI results file for detailed output
-      if (result.success && result.data?.aiResultsFile) {
-        const aiResults = await this.runner.getLatestResults(
-          this.configManager.getResultsFolder(config),
-          result.data.aiResultsFile
-        );
-
-        if (aiResults.success && aiResults.data) {
-          return new vscode.LanguageModelToolResult([
-            new vscode.LanguageModelTextPart(
-              JSON.stringify(aiResults.data, null, 2)
-            ),
-          ]);
-        }
+      // Return the full AI results
+      if (result.success && result.data) {
+        return new vscode.LanguageModelToolResult([
+          new vscode.LanguageModelTextPart(
+            JSON.stringify(result.data, null, 2)
+          ),
+        ]);
       }
 
       return new vscode.LanguageModelToolResult([

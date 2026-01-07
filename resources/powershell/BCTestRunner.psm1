@@ -609,7 +609,10 @@ function Export-TestResultsForAI {
     
     Write-Host "Test results exported to: $OutputPath"
     
-    return $OutputPath
+    # Convert the ordered hashtable to PSCustomObject for proper serialization
+    # Then return it so it can be used directly by the calling function
+    $outputObject = [PSCustomObject]$output
+    return $outputObject
 }
 
 #endregion
@@ -706,14 +709,18 @@ function Invoke-BCExecuteTestsFromJson {
             -TestResultsFile $testResultsXml `
             -WorkspacePath $config.workspacePath
         
-        # Export AI-friendly results
-        Export-TestResultsForAI `
+        # Export AI-friendly results and get the data object back
+        $aiResults = Export-TestResultsForAI `
             -OutputPath $aiResultsJson `
             -Environment $env `
             -TestResults $testResults
         
-        # Load the full AI results to return
-        $aiResults = Get-Content -Path $aiResultsJson -Raw | ConvertFrom-Json
+        # Debug: Check what we got back
+        Write-Host "[DEBUG] aiResults type: $($aiResults.GetType().Name)"
+        Write-Host "[DEBUG] aiResults is null: $($null -eq $aiResults)"
+        if ($aiResults) {
+            Write-Host "[DEBUG] aiResults has schema: $($aiResults.schema)"
+        }
         
         # Write the full AI results to temp file for TypeScript consumption
         Write-JsonResult -Result $aiResults
@@ -825,10 +832,10 @@ function Invoke-BCTestRunner {
         -TestResultsFile $testResultsXml `
         -WorkspacePath $config.workspacePath
     
-    # Export results
+    # Export results and get the AI-friendly object back
     Write-Host "`n--- Exporting Results ---`n"
     
-    Export-TestResultsForAI `
+    $aiResults = Export-TestResultsForAI `
         -OutputPath $aiResultsJson `
         -Environment $env `
         -TestResults $testResults
@@ -845,12 +852,9 @@ function Invoke-BCTestRunner {
     Write-Host "AI Results: $aiResultsJson"
     Write-Host "========================================`n"
     
-    return [PSCustomObject]@{
-        Success       = $testResults.Success
-        TestResults   = $testResults
-        AIResultsFile = $aiResultsJson
-        Duration      = $overallStopwatch.Elapsed
-    }
+    # Return the full AI results object with file path
+    $aiResults | Add-Member -NotePropertyName 'FilePath' -NotePropertyValue $aiResultsJson -Force
+    return $aiResults
 }
 
 #endregion
