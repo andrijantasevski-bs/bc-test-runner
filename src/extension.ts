@@ -99,28 +99,14 @@ function registerCommands(context: vscode.ExtensionContext): void {
   // Run all tests
   context.subscriptions.push(
     vscode.commands.registerCommand("bcTestRunner.runTests", async () => {
-      await runTests({ skipCompile: false, skipPublish: false });
+      await runTests();
     })
   );
 
-  // Compile apps only
-  context.subscriptions.push(
-    vscode.commands.registerCommand("bcTestRunner.compileApps", async () => {
-      await compileApps();
-    })
-  );
-
-  // Publish apps only
-  context.subscriptions.push(
-    vscode.commands.registerCommand("bcTestRunner.publishApps", async () => {
-      await publishApps();
-    })
-  );
-
-  // Execute tests only (skip compile/publish)
+  // Execute tests only (alias for runTests - apps must be pre-compiled/published)
   context.subscriptions.push(
     vscode.commands.registerCommand("bcTestRunner.executeTests", async () => {
-      await runTests({ skipCompile: true, skipPublish: true });
+      await runTests();
     })
   );
 
@@ -200,12 +186,9 @@ function registerCommands(context: vscode.ExtensionContext): void {
 }
 
 /**
- * Run tests with options
+ * Run tests (assumes apps are already compiled and published)
  */
-async function runTests(options: {
-  skipCompile: boolean;
-  skipPublish: boolean;
-}): Promise<void> {
+async function runTests(): Promise<void> {
   const configPath = await configManager.findConfigFile();
   if (!configPath) {
     const create = await vscode.window.showWarningMessage(
@@ -266,8 +249,6 @@ async function runTests(options: {
         progress.report({ message: "Running tests..." });
 
         const result = await runner.runTests(configPath, env.name, {
-          skipCompile: options.skipCompile,
-          skipPublish: options.skipPublish,
           credential,
           cancellationToken: token,
         });
@@ -341,127 +322,6 @@ async function runTests(options: {
       "setContext",
       "bcTestRunner.isRunning",
       false
-    );
-  }
-}
-
-/**
- * Compile apps only
- */
-async function compileApps(): Promise<void> {
-  const configPath = await configManager.findConfigFile();
-  if (!configPath) {
-    vscode.window.showWarningMessage("No bctest.config.json found");
-    return;
-  }
-
-  try {
-    const config = await configManager.loadConfig(configPath);
-    const env = configManager.getEnvironment(config);
-
-    if (!env) {
-      vscode.window.showErrorMessage("No environment configured");
-      return;
-    }
-
-    let credential: { username: string; password: string } | undefined;
-    if (env.authentication === "UserPassword") {
-      credential = await credentialManager.getOrPromptCredentials(env.name);
-    }
-
-    updateStatusBar("$(sync~spin) Compiling...");
-
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "Compiling BC Apps",
-        cancellable: true,
-      },
-      async (progress, token) => {
-        progress.report({ message: "Compiling..." });
-
-        const result = await runner.compileApps(
-          configPath,
-          env.name,
-          undefined,
-          {
-            credential,
-            cancellationToken: token,
-          }
-        );
-
-        if (result.success) {
-          updateStatusBar("$(check) Compiled");
-          vscode.window.showInformationMessage("Apps compiled successfully");
-        } else {
-          updateStatusBar("$(error) Compile failed");
-          vscode.window.showErrorMessage(`Compilation failed: ${result.error}`);
-        }
-      }
-    );
-  } catch (error) {
-    vscode.window.showErrorMessage(
-      `Error compiling apps: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-  }
-}
-
-/**
- * Publish apps only
- */
-async function publishApps(): Promise<void> {
-  const configPath = await configManager.findConfigFile();
-  if (!configPath) {
-    vscode.window.showWarningMessage("No bctest.config.json found");
-    return;
-  }
-
-  try {
-    const config = await configManager.loadConfig(configPath);
-    const env = configManager.getEnvironment(config);
-
-    if (!env) {
-      vscode.window.showErrorMessage("No environment configured");
-      return;
-    }
-
-    let credential: { username: string; password: string } | undefined;
-    if (env.authentication === "UserPassword") {
-      credential = await credentialManager.getOrPromptCredentials(env.name);
-    }
-
-    updateStatusBar("$(sync~spin) Publishing...");
-
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "Publishing BC Apps",
-        cancellable: true,
-      },
-      async (progress, token) => {
-        progress.report({ message: "Publishing..." });
-
-        const result = await runner.publishApps(configPath, env.name, {
-          credential,
-          cancellationToken: token,
-        });
-
-        if (result.success) {
-          updateStatusBar("$(check) Published");
-          vscode.window.showInformationMessage("Apps published successfully");
-        } else {
-          updateStatusBar("$(error) Publish failed");
-          vscode.window.showErrorMessage(`Publishing failed: ${result.error}`);
-        }
-      }
-    );
-  } catch (error) {
-    vscode.window.showErrorMessage(
-      `Error publishing apps: ${
-        error instanceof Error ? error.message : String(error)
-      }`
     );
   }
 }

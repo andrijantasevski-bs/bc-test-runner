@@ -66,8 +66,6 @@ abstract class BCTestRunnerTool implements vscode.LanguageModelTool<unknown> {
  */
 interface TestRunParams {
   environment?: string;
-  skipCompile?: boolean;
-  skipPublish?: boolean;
 }
 
 /**
@@ -125,8 +123,6 @@ export class BCTestRunTool extends BCTestRunnerTool {
       this.outputChannel.show();
 
       const result = await this.runner.runTests(configPath, envName, {
-        skipCompile: params.skipCompile,
-        skipPublish: params.skipPublish,
         credential,
         cancellationToken: token,
       });
@@ -162,205 +158,6 @@ export class BCTestRunTool extends BCTestRunnerTool {
           ]);
         }
       }
-
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(
-          JSON.stringify(
-            {
-              success: result.success,
-              data: result.data,
-              error: result.error,
-              duration: result.duration,
-            },
-            null,
-            2
-          )
-        ),
-      ]);
-    } catch (error) {
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(
-          JSON.stringify(
-            {
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            null,
-            2
-          )
-        ),
-      ]);
-    }
-  }
-}
-
-/**
- * Parameters for bc-test-compile tool
- */
-interface CompileParams {
-  environment?: string;
-  apps?: string[];
-}
-
-/**
- * BC Test Compile Tool - Compile apps only
- */
-export class BCTestCompileTool extends BCTestRunnerTool {
-  async invoke(
-    options: vscode.LanguageModelToolInvocationOptions<CompileParams>,
-    token: vscode.CancellationToken
-  ): Promise<vscode.LanguageModelToolResult> {
-    const params = options.input as CompileParams;
-
-    try {
-      const configPath = await this.configManager.findConfigFile();
-      if (!configPath) {
-        return new vscode.LanguageModelToolResult([
-          new vscode.LanguageModelTextPart(
-            JSON.stringify(
-              {
-                success: false,
-                error: "No bctest.config.json found in workspace",
-              },
-              null,
-              2
-            )
-          ),
-        ]);
-      }
-
-      const config = await this.configManager.loadConfig(configPath);
-      const envName = params.environment || config.defaultEnvironment;
-      const env = config.environments.find((e) => e.name === envName);
-
-      if (!env) {
-        return new vscode.LanguageModelToolResult([
-          new vscode.LanguageModelTextPart(
-            JSON.stringify(
-              {
-                success: false,
-                error: `Environment '${envName}' not found`,
-              },
-              null,
-              2
-            )
-          ),
-        ]);
-      }
-
-      const credential = await this.getCredentials(envName, env.authentication);
-
-      this.outputChannel.appendLine(
-        `[Tool] bc-test-compile: Compiling apps for environment '${envName}'`
-      );
-      this.outputChannel.show();
-
-      const result = await this.runner.compileApps(
-        configPath,
-        envName,
-        params.apps,
-        {
-          credential,
-          cancellationToken: token,
-        }
-      );
-
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(
-          JSON.stringify(
-            {
-              success: result.success,
-              data: result.data,
-              error: result.error,
-              errorDetails: result.errorDetails,
-              duration: result.duration,
-            },
-            null,
-            2
-          )
-        ),
-      ]);
-    } catch (error) {
-      return new vscode.LanguageModelToolResult([
-        new vscode.LanguageModelTextPart(
-          JSON.stringify(
-            {
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            },
-            null,
-            2
-          )
-        ),
-      ]);
-    }
-  }
-}
-
-/**
- * Parameters for bc-test-publish tool
- */
-interface PublishParams {
-  environment?: string;
-}
-
-/**
- * BC Test Publish Tool - Publish apps only
- */
-export class BCTestPublishTool extends BCTestRunnerTool {
-  async invoke(
-    options: vscode.LanguageModelToolInvocationOptions<PublishParams>,
-    token: vscode.CancellationToken
-  ): Promise<vscode.LanguageModelToolResult> {
-    const params = options.input as PublishParams;
-
-    try {
-      const configPath = await this.configManager.findConfigFile();
-      if (!configPath) {
-        return new vscode.LanguageModelToolResult([
-          new vscode.LanguageModelTextPart(
-            JSON.stringify(
-              {
-                success: false,
-                error: "No bctest.config.json found in workspace",
-              },
-              null,
-              2
-            )
-          ),
-        ]);
-      }
-
-      const config = await this.configManager.loadConfig(configPath);
-      const envName = params.environment || config.defaultEnvironment;
-      const env = config.environments.find((e) => e.name === envName);
-
-      if (!env) {
-        return new vscode.LanguageModelToolResult([
-          new vscode.LanguageModelTextPart(
-            JSON.stringify(
-              {
-                success: false,
-                error: `Environment '${envName}' not found`,
-              },
-              null,
-              2
-            )
-          ),
-        ]);
-      }
-
-      const credential = await this.getCredentials(envName, env.authentication);
-
-      this.outputChannel.appendLine(
-        `[Tool] bc-test-publish: Publishing apps for environment '${envName}'`
-      );
-      this.outputChannel.show();
-
-      const result = await this.runner.publishApps(configPath, envName, {
-        credential,
-        cancellationToken: token,
-      });
 
       return new vscode.LanguageModelToolResult([
         new vscode.LanguageModelTextPart(
@@ -672,32 +469,6 @@ export function registerTools(
     vscode.lm.registerTool(
       "bc-test-run",
       new BCTestRunTool(runner, credentialManager, configManager, outputChannel)
-    )
-  );
-
-  // Register bc-test-compile tool
-  context.subscriptions.push(
-    vscode.lm.registerTool(
-      "bc-test-compile",
-      new BCTestCompileTool(
-        runner,
-        credentialManager,
-        configManager,
-        outputChannel
-      )
-    )
-  );
-
-  // Register bc-test-publish tool
-  context.subscriptions.push(
-    vscode.lm.registerTool(
-      "bc-test-publish",
-      new BCTestPublishTool(
-        runner,
-        credentialManager,
-        configManager,
-        outputChannel
-      )
     )
   );
 

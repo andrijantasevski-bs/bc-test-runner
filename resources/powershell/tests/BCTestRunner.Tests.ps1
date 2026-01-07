@@ -7,7 +7,6 @@
     Comprehensive tests for all core functionality including:
     - Configuration loading and validation
     - Credential handling
-    - Compilation result parsing
     - Test result processing
     - AI-friendly export format
 #>
@@ -44,19 +43,12 @@ BeforeAll {
                 server = 'http://testcontainer'
                 serverInstance = 'BC'
                 authentication = 'UserPassword'
-                syncMode = 'ForceSync'
             }
         )
         output = @{
             resultsFolder = '.testresults'
             keepHistoryCount = 10
             formats = @('json', 'xml')
-        }
-        compilation = @{
-            enableCodeCop = $true
-            enableAppSourceCop = $true
-            enablePerTenantExtensionCop = $true
-            enableUICop = $true
         }
     }
 
@@ -191,50 +183,6 @@ Describe 'ConvertTo-PSCredentialFromJson' {
     }
 }
 
-Describe 'Get-ParsedCompilerErrors' {
-    Context 'Parsing compiler output' {
-        It 'Should parse AL compiler error messages' {
-            $errorMessage = @"
-c:\project\App\src\codeunit\MyCodeunit.al(15,5): error AL0432: The name 'SomeVariable' does not exist in the current context
-c:\project\App\src\page\MyPage.al(42,10): warning AL0603: The variable 'Unused' is defined but not used
-"@
-            
-            $result = InModuleScope BCTestRunner {
-                param($errorMessage)
-                Get-ParsedCompilerErrors -ErrorMessage $errorMessage
-            } -ArgumentList $errorMessage
-            
-            $result.errors | Should -HaveCount 1
-            $result.warnings | Should -HaveCount 1
-            
-            $result.errors[0].line | Should -Be 15
-            $result.errors[0].column | Should -Be 5
-            $result.errors[0].code | Should -Be 'AL0432'
-            
-            $result.warnings[0].line | Should -Be 42
-            $result.warnings[0].code | Should -Be 'AL0603'
-        }
-
-        It 'Should return empty arrays for null input' {
-            $result = InModuleScope BCTestRunner {
-                Get-ParsedCompilerErrors -ErrorMessage $null
-            }
-            
-            $result.errors | Should -HaveCount 0
-            $result.warnings | Should -HaveCount 0
-        }
-
-        It 'Should handle messages without errors' {
-            $result = InModuleScope BCTestRunner {
-                Get-ParsedCompilerErrors -ErrorMessage 'Compilation successful'
-            }
-            
-            $result.errors | Should -HaveCount 0
-            $result.warnings | Should -HaveCount 0
-        }
-    }
-}
-
 Describe 'Get-ParsedStackTrace' {
     Context 'Parsing AL stack traces' {
         It 'Should parse AL stack trace format' {
@@ -338,7 +286,7 @@ Describe 'Export-TestResultsForAI' {
             Test-Path $script:OutputPath | Should -Be $true
             
             $content = Get-Content $script:OutputPath -Raw | ConvertFrom-Json
-            $content.schema | Should -Be '1.1'
+            $content.schema | Should -Be '1.0'
         }
 
         It 'Should include environment information' {
@@ -385,31 +333,6 @@ Describe 'Export-TestResultsForAI' {
             $content.aiContext | Should -Not -BeNullOrEmpty
             $content.aiContext.analysisHints | Should -Not -BeNullOrEmpty
             $content.aiContext.suggestedActions | Should -Not -BeNullOrEmpty
-        }
-    }
-
-    Context 'Compilation results' {
-        It 'Should include compilation results when provided' {
-            $compilationResults = @(
-                [PSCustomObject]@{
-                    AppProjectFolder = 'C:\project\App'
-                    AppFile = 'C:\project\App\output.app'
-                    Success = $true
-                    Duration = [TimeSpan]::FromSeconds(45)
-                    Errors = @()
-                    Warnings = @()
-                }
-            )
-            
-            Export-TestResultsForAI `
-                -OutputPath $script:OutputPath `
-                -Environment $script:MockEnvironment `
-                -CompilationResults $compilationResults `
-                -TestResults $script:MockTestResults
-            
-            $content = Get-Content $script:OutputPath -Raw | ConvertFrom-Json
-            $content.compilation.success | Should -Be $true
-            $content.compilation.apps | Should -HaveCount 1
         }
     }
 }

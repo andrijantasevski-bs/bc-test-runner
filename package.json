@@ -33,18 +33,6 @@
         "icon": "$(testing-run-all-icon)"
       },
       {
-        "command": "bcTestRunner.compileApps",
-        "title": "BC Test Runner: Compile Apps"
-      },
-      {
-        "command": "bcTestRunner.publishApps",
-        "title": "BC Test Runner: Publish Apps"
-      },
-      {
-        "command": "bcTestRunner.executeTests",
-        "title": "BC Test Runner: Execute Tests (Skip Compile/Publish)"
-      },
-      {
         "command": "bcTestRunner.viewResults",
         "title": "BC Test Runner: View Latest Results"
       },
@@ -161,41 +149,6 @@
               "type": "boolean",
               "description": "Skip publishing phase if apps are already published.",
               "default": false
-            }
-          }
-        }
-      },
-      {
-        "name": "bc-test-compile",
-        "displayName": "Compile BC Apps",
-        "modelDescription": "Compile Business Central AL apps. Returns compilation success/failure with detailed error messages including file paths and line numbers.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "environment": {
-              "type": "string",
-              "description": "Environment name for container selection."
-            },
-            "apps": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Specific app folder names to compile. If not specified, compiles all apps from config."
-            }
-          }
-        }
-      },
-      {
-        "name": "bc-test-publish",
-        "displayName": "Publish BC Apps",
-        "modelDescription": "Publish compiled .app files to Business Central container. Returns publish status and sync results.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {
-            "environment": {
-              "type": "string",
-              "description": "Environment name for container selection."
             }
           }
         }

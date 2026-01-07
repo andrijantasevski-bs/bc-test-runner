@@ -63,9 +63,6 @@ export class EnvironmentTreeItem extends vscode.TreeItem {
     this.tooltip.appendMarkdown(
       `- **Auth:** ${this.environment.authentication}\n`
     );
-    this.tooltip.appendMarkdown(
-      `- **Sync Mode:** ${this.environment.syncMode || "ForceSync"}\n`
-    );
 
     // Context value for commands
     this.contextValue = this.hasCredentials

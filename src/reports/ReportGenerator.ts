@@ -113,7 +113,6 @@ export class ReportGenerator {
     }</div>
         </section>
 
-        ${this._generateCompilationSection(results)}
         ${this._generateFailuresSection(results)}
         ${this._generateAllTestsSection(results)}
         ${this._generateAIContextSection(results)}
@@ -125,79 +124,6 @@ export class ReportGenerator {
     </script>
 </body>
 </html>`;
-  }
-
-  /**
-   * Generate compilation results section
-   */
-  private _generateCompilationSection(results: AITestResults): string {
-    if (
-      !results.compilation ||
-      !results.compilation.apps ||
-      results.compilation.apps.length === 0
-    ) {
-      return "";
-    }
-
-    const apps = results.compilation.apps
-      .map((app) => {
-        const status = app.success ? "✓" : "✗";
-        const statusClass = app.success ? "success" : "error";
-
-        let errorsHtml = "";
-        if (app.errors && app.errors.length > 0) {
-          errorsHtml = `
-                    <div class="compilation-errors">
-                        <h5>Errors:</h5>
-                        <ul>
-                            ${app.errors
-                              .map(
-                                (e) => `
-                                <li class="compilation-error">
-                                    <code>${this._escapeHtml(e.file)}:${
-                                  e.line
-                                }:${e.column}</code>
-                                    <span class="error-code">${e.code}</span>
-                                    <span class="error-msg">${this._escapeHtml(
-                                      e.message
-                                    )}</span>
-                                </li>
-                            `
-                              )
-                              .join("")}
-                        </ul>
-                    </div>
-                `;
-        }
-
-        return `
-                <div class="app-result ${statusClass}">
-                    <span class="status-icon">${status}</span>
-                    <span class="app-name">${this._escapeHtml(
-                      path.basename(app.project)
-                    )}</span>
-                    <span class="duration">${app.duration}</span>
-                    ${errorsHtml}
-                </div>
-            `;
-      })
-      .join("");
-
-    return `
-            <section class="section">
-                <h2 class="section-title">
-                    <span class="icon">📦</span> Compilation
-                    <span class="badge ${
-                      results.compilation.success ? "success" : "error"
-                    }">
-                        ${results.compilation.success ? "Success" : "Failed"}
-                    </span>
-                </h2>
-                <div class="apps-list">
-                    ${apps}
-                </div>
-            </section>
-        `;
   }
 
   /**

@@ -177,22 +177,18 @@ export class PowerShellRunner {
   }
 
   /**
-   * Execute the full test pipeline
+   * Execute the test pipeline (assumes apps are already compiled/published)
    */
   async runTests(
     configPath: string,
     environmentName?: string,
     options?: ExecutionOptions & {
-      skipCompile?: boolean;
-      skipPublish?: boolean;
       credential?: { username: string; password: string };
     }
   ): Promise<PowerShellResult<TestRunResult>> {
     const stdinData = {
       configPath,
       environmentName,
-      skipCompile: options?.skipCompile ?? false,
-      skipPublish: options?.skipPublish ?? false,
       credential: options?.credential,
     };
 
@@ -204,57 +200,7 @@ export class PowerShellRunner {
   }
 
   /**
-   * Compile AL apps
-   */
-  async compileApps(
-    configPath: string,
-    environmentName?: string,
-    apps?: string[],
-    options?: ExecutionOptions & {
-      credential?: { username: string; password: string };
-    }
-  ): Promise<PowerShellResult<CompilationResult>> {
-    const stdinData = {
-      configPath,
-      environmentName,
-      apps,
-      credential: options?.credential,
-      operation: "compile",
-    };
-
-    const script = this.buildInvokeScript("Invoke-BCCompileFromJson");
-    return this.executeWithProgress<CompilationResult>(script, {
-      ...options,
-      stdinData,
-    });
-  }
-
-  /**
-   * Publish apps to container
-   */
-  async publishApps(
-    configPath: string,
-    environmentName?: string,
-    options?: ExecutionOptions & {
-      credential?: { username: string; password: string };
-    }
-  ): Promise<PowerShellResult<PublishResult>> {
-    const stdinData = {
-      configPath,
-      environmentName,
-      credential: options?.credential,
-      operation: "publish",
-    };
-
-    const script = this.buildInvokeScript("Invoke-BCPublishFromJson");
-    return this.executeWithProgress<PublishResult>(script, {
-      ...options,
-      stdinData,
-    });
-  }
-
-  /**
-   * Execute tests only (skip compile/publish)
+   * Execute tests only
    */
   async executeTests(
     configPath: string,
@@ -758,56 +704,10 @@ export class PowerShellRunner {
 
 export interface TestRunResult {
   success: boolean;
-  compilationResults?: CompilationResult;
-  publishResults?: PublishResult;
   testResults?: TestExecutionResult;
   aiResultsFile?: string;
   htmlReportFile?: string;
   duration: string;
-}
-
-export interface CompilationResult {
-  success: boolean;
-  apps: CompilationAppResult[];
-  duration: string;
-}
-
-export interface CompilationAppResult {
-  project: string;
-  appFile?: string;
-  success: boolean;
-  duration: string;
-  errors?: CompilationError[];
-  warnings?: CompilationWarning[];
-}
-
-export interface CompilationError {
-  file: string;
-  line: number;
-  column: number;
-  code: string;
-  message: string;
-}
-
-export interface CompilationWarning {
-  file: string;
-  line: number;
-  column: number;
-  code: string;
-  message: string;
-}
-
-export interface PublishResult {
-  success: boolean;
-  apps: PublishAppResult[];
-  duration: string;
-}
-
-export interface PublishAppResult {
-  appFile: string;
-  success: boolean;
-  syncMode: string;
-  message?: string;
 }
 
 export interface TestExecutionResult {
@@ -855,10 +755,6 @@ export interface AITestResults {
     serverInstance: string;
     authentication: string;
   };
-  compilation?: {
-    success: boolean;
-    apps: CompilationAppResult[];
-  };
   tests: {
     success: boolean;
     summary: TestSummary;
@@ -889,12 +785,6 @@ export interface BCTestConfig {
     keepHistoryCount: number;
     formats: string[];
   };
-  compilation: {
-    enableCodeCop: boolean;
-    enableAppSourceCop: boolean;
-    enablePerTenantExtensionCop: boolean;
-    enableUICop: boolean;
-  };
 }
 
 export interface BCTestEnvironment {
@@ -905,6 +795,5 @@ export interface BCTestEnvironment {
   server: string;
   serverInstance: string;
   authentication: "UserPassword" | "Windows" | "NavUserPassword";
-  syncMode: "Add" | "Clean" | "Development" | "ForceSync";
   tenant?: string;
 }

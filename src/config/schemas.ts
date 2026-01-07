@@ -20,7 +20,6 @@ export const EnvironmentSchema = z.object({
   server: z.string().regex(/^https?:\/\/.+/),
   serverInstance: z.string().default("BC"),
   authentication: z.enum(["UserPassword", "Windows", "NavUserPassword"]),
-  syncMode: z.enum(["Add", "Clean", "Development", "ForceSync"]).default("Add"),
   tenant: z.string().optional().default("default"),
 });
 
@@ -49,15 +48,6 @@ export const OutputSchema = z.object({
   includePassedTests: z.boolean().optional().default(true),
 });
 
-// Compilation schema
-export const CompilationSchema = z.object({
-  enableCodeCop: z.boolean().default(true),
-  enableAppSourceCop: z.boolean().default(true),
-  enablePerTenantExtensionCop: z.boolean().default(true),
-  enableUICop: z.boolean().default(true),
-  treatWarningsAsErrors: z.boolean().optional().default(false),
-});
-
 // Test execution schema
 export const TestExecutionSchema = z
   .object({
@@ -80,7 +70,6 @@ export const BCTestConfigSchema = z.object({
   testApp: TestAppSchema,
   environments: z.array(EnvironmentSchema).min(1),
   output: OutputSchema,
-  compilation: CompilationSchema,
   testExecution: TestExecutionSchema,
 });
 
@@ -89,5 +78,4 @@ export type BCTestConfig = z.infer<typeof BCTestConfigSchema>;
 export type BCTestEnvironment = z.infer<typeof EnvironmentSchema>;
 export type TestApp = z.infer<typeof TestAppSchema>;
 export type OutputConfig = z.infer<typeof OutputSchema>;
-export type CompilationConfig = z.infer<typeof CompilationSchema>;
 export type TestExecutionConfig = z.infer<typeof TestExecutionSchema>;

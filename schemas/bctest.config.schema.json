@@ -102,37 +102,6 @@
         }
       }
     },
-    "compilation": {
-      "type": "object",
-      "description": "Compilation settings",
-      "properties": {
-        "enableCodeCop": {
-          "type": "boolean",
-          "description": "Enable CodeCop analyzer",
-          "default": true
-        },
-        "enableAppSourceCop": {
-          "type": "boolean",
-          "description": "Enable AppSourceCop analyzer",
-          "default": true
-        },
-        "enablePerTenantExtensionCop": {
-          "type": "boolean",
-          "description": "Enable PerTenantExtensionCop analyzer",
-          "default": true
-        },
-        "enableUICop": {
-          "type": "boolean",
-          "description": "Enable UICop analyzer",
-          "default": true
-        },
-        "treatWarningsAsErrors": {
-          "type": "boolean",
-          "description": "Treat compiler warnings as errors",
-          "default": false
-        }
-      }
-    },
     "testExecution": {
       "type": "object",
       "description": "Test execution settings",
@@ -161,7 +130,14 @@
     "environment": {
       "type": "object",
       "description": "Target environment configuration",
-      "required": ["name", "type", "containerName", "server", "serverInstance", "authentication"],
+      "required": [
+        "name",
+        "type",
+        "containerName",
+        "server",
+        "serverInstance",
+        "authentication"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -188,21 +164,10 @@
           "description": "Server URL (e.g., http://localhost or http://containername)",
           "pattern": "^https?://.+"
         },
-        "serverInstance": {
-          "type": "string",
-          "description": "BC server instance name",
-          "default": "BC"
-        },
         "authentication": {
           "type": "string",
           "description": "Authentication method",
           "enum": ["UserPassword", "Windows", "NavUserPassword"]
-        },
-        "syncMode": {
-          "type": "string",
-          "description": "App synchronization mode",
-          "enum": ["Add", "Clean", "Development", "ForceSync"],
-          "default": "ForceSync"
         },
         "tenant": {
           "type": "string",

@@ -166,57 +166,6 @@ function ConvertTo-PSCredentialFromJson {
     return New-Object PSCredential($CredentialInfo.username, $securePassword)
 }
 
-function Get-ParsedCompilerErrors {
-    <#
-    .SYNOPSIS
-        Parses compiler output to extract structured error information.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter()]
-        [string]$ErrorMessage,
-        
-        [Parameter()]
-        [string]$ProjectPath
-    )
-    
-    $errors = @()
-    $warnings = @()
-    
-    if (-not $ErrorMessage) {
-        return @{ errors = $errors; warnings = $warnings }
-    }
-    
-    # Pattern for AL compiler errors: file(line,column): error/warning CODE: message
-    $pattern = '(?<file>[^(]+)\((?<line>\d+),(?<column>\d+)\):\s*(?<type>error|warning)\s+(?<code>[A-Z]{2}\d+):\s*(?<message>.+)'
-    
-    $matches = [regex]::Matches($ErrorMessage, $pattern, [System.Text.RegularExpressions.RegexOptions]::Multiline)
-    
-    foreach ($match in $matches) {
-        $item = [ordered]@{
-            file = $match.Groups['file'].Value.Trim()
-            line = [int]$match.Groups['line'].Value
-            column = [int]$match.Groups['column'].Value
-            code = $match.Groups['code'].Value
-            message = $match.Groups['message'].Value.Trim()
-        }
-        
-        # Make file path relative to project if possible
-        if ($ProjectPath -and $item.file.StartsWith($ProjectPath)) {
-            $item.file = $item.file.Substring($ProjectPath.Length).TrimStart('\', '/')
-        }
-        
-        if ($match.Groups['type'].Value -eq 'error') {
-            $errors += $item
-        }
-        else {
-            $warnings += $item
-        }
-    }
-    
-    return @{ errors = $errors; warnings = $warnings }
-}
-
 function Get-ParsedStackTrace {
     <#
     .SYNOPSIS
@@ -272,225 +221,6 @@ function Get-ParsedStackTrace {
 #endregion
 
 #region Core Functions
-
-function Compile-ALApp {
-    <#
-    .SYNOPSIS
-        Compiles an AL app using BcContainerHelper.
-    
-    .PARAMETER ContainerName
-        Name of the BC container.
-    
-    .PARAMETER AppProjectFolder
-        Path to the AL app project folder.
-    
-    .PARAMETER OutputFolder
-        Path where the compiled .app file will be placed.
-    
-    .PARAMETER Credential
-        Credentials for container authentication.
-    
-    .PARAMETER CompilationOptions
-        Additional compilation options from config.
-    
-    .OUTPUTS
-        PSObject with compilation result including AppFile path and success status.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$ContainerName,
-        
-        [Parameter(Mandatory)]
-        [string]$AppProjectFolder,
-        
-        [Parameter()]
-        [string]$OutputFolder,
-        
-        [Parameter()]
-        [PSCredential]$Credential,
-        
-        [Parameter()]
-        [PSObject]$CompilationOptions
-    )
-    
-    Test-BcContainerHelperInstalled | Out-Null
-    Import-Module BcContainerHelper -DisableNameChecking
-    
-    $result = [PSCustomObject]@{
-        AppProjectFolder = $AppProjectFolder
-        AppFile          = $null
-        Success          = $false
-        ErrorMessage     = $null
-        Errors           = @()
-        Warnings         = @()
-        Duration         = $null
-    }
-    
-    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    
-    try {
-        if (-not $OutputFolder) {
-            $OutputFolder = $AppProjectFolder
-        }
-        
-        $appJsonPath = Join-Path $AppProjectFolder 'app.json'
-        if (-not (Test-Path $appJsonPath)) {
-            throw "app.json not found in $AppProjectFolder"
-        }
-        
-        $appJson = Get-Content $appJsonPath -Raw | ConvertFrom-Json
-        $symbolsPath = Join-Path $AppProjectFolder 'symbols'
-        
-        Write-Host "Compiling app: $($appJson.name) v$($appJson.version)"
-        
-        # Build compilation parameters
-        $compileParams = @{
-            containerName    = $ContainerName
-            appProjectFolder = $AppProjectFolder
-            appOutputFolder  = $OutputFolder
-            appSymbolsFolder = $symbolsPath
-            AzureDevOps      = $false
-        }
-        
-        # Apply compilation options from config
-        if ($CompilationOptions) {
-            $compileParams['EnableCodeCop'] = $CompilationOptions.enableCodeCop -ne $false
-            $compileParams['EnableAppSourceCop'] = $CompilationOptions.enableAppSourceCop -ne $false
-            $compileParams['EnablePerTenantExtensionCop'] = $CompilationOptions.enablePerTenantExtensionCop -ne $false
-            $compileParams['EnableUICop'] = $CompilationOptions.enableUICop -ne $false
-            
-            if ($CompilationOptions.treatWarningsAsErrors) {
-                $compileParams['FailOn'] = 'warning'
-            }
-        }
-        else {
-            $compileParams['EnableCodeCop'] = $true
-            $compileParams['EnableAppSourceCop'] = $true
-            $compileParams['EnablePerTenantExtensionCop'] = $true
-            $compileParams['EnableUICop'] = $true
-        }
-        
-        if ($Credential) {
-            $compileParams['credential'] = $Credential
-        }
-        
-        $appFile = Compile-AppInBcContainer @compileParams
-        
-        $result.AppFile = $appFile
-        $result.Success = $true
-        
-        Write-Host "Successfully compiled: $appFile"
-    }
-    catch {
-        $result.ErrorMessage = $_.Exception.Message
-        
-        # Parse compiler errors for structured output
-        $parsed = Get-ParsedCompilerErrors -ErrorMessage $_.Exception.Message -ProjectPath $AppProjectFolder
-        $result.Errors = $parsed.errors
-        $result.Warnings = $parsed.warnings
-        
-        Write-Host "Compilation failed: $($_.Exception.Message)"
-    }
-    finally {
-        $stopwatch.Stop()
-        $result.Duration = $stopwatch.Elapsed
-    }
-    
-    return $result
-}
-
-function Publish-BCApp {
-    <#
-    .SYNOPSIS
-        Publishes an AL app to a BC container.
-    
-    .PARAMETER ContainerName
-        Name of the BC container.
-    
-    .PARAMETER AppFile
-        Path to the .app file to publish.
-    
-    .PARAMETER Credential
-        Credentials for container authentication.
-    
-    .PARAMETER SkipVerification
-        Skip app signature verification.
-    
-    .PARAMETER SyncMode
-        Schema sync mode (Add, Clean, Development, ForceSync).
-    
-    .OUTPUTS
-        PSObject with publish result.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$ContainerName,
-        
-        [Parameter(Mandatory)]
-        [string]$AppFile,
-        
-        [Parameter()]
-        [PSCredential]$Credential,
-        
-        [Parameter()]
-        [switch]$SkipVerification,
-        
-        [Parameter()]
-        [ValidateSet('Add', 'Clean', 'Development', 'ForceSync')]
-        [string]$SyncMode = 'ForceSync'
-    )
-    
-    Test-BcContainerHelperInstalled | Out-Null
-    Import-Module BcContainerHelper -DisableNameChecking
-    
-    $result = [PSCustomObject]@{
-        AppFile      = $AppFile
-        Success      = $false
-        SyncMode     = $SyncMode
-        ErrorMessage = $null
-        Duration     = $null
-    }
-    
-    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-    
-    try {
-        if (-not (Test-Path $AppFile)) {
-            throw "App file not found: $AppFile"
-        }
-        
-        Write-Host "Publishing app: $AppFile"
-        
-        $publishParams = @{
-            containerName    = $ContainerName
-            appFile          = $AppFile
-            skipVerification = $SkipVerification.IsPresent -or $true
-            sync             = $true
-            install          = $true
-            syncMode         = $SyncMode
-        }
-        
-        if ($Credential) {
-            $publishParams['credential'] = $Credential
-        }
-        
-        Publish-BcContainerApp @publishParams
-        
-        $result.Success = $true
-        Write-Host "Successfully published app"
-    }
-    catch {
-        $result.ErrorMessage = $_.Exception.Message
-        Write-Host "Publish failed: $($_.Exception.Message)"
-    }
-    finally {
-        $stopwatch.Stop()
-        $result.Duration = $stopwatch.Elapsed
-    }
-    
-    return $result
-}
 
 function Invoke-BCTests {
     <#
@@ -714,9 +444,6 @@ function Export-TestResultsForAI {
         [PSObject]$Environment,
         
         [Parameter()]
-        [PSObject[]]$CompilationResults,
-        
-        [Parameter()]
         [PSObject]$TestResults,
         
         [Parameter()]
@@ -724,17 +451,13 @@ function Export-TestResultsForAI {
     )
     
     $output = [ordered]@{
-        schema      = '1.1'
+        schema      = '1.0'
         timestamp   = (Get-Date -Format 'o')
         environment = [ordered]@{
             name           = $Environment.name
             server         = $Environment.server
             serverInstance = $Environment.serverInstance
             authentication = $Environment.authentication
-        }
-        compilation = [ordered]@{
-            success = $true
-            apps    = @()
         }
         tests       = [ordered]@{
             success  = $false
@@ -759,40 +482,6 @@ function Export-TestResultsForAI {
             suggestedActions = @()
             errorLocations   = @()
         }
-    }
-    
-    # Process compilation results
-    if ($CompilationResults) {
-        $allCompiled = $true
-        foreach ($compResult in $CompilationResults) {
-            $appInfo = [ordered]@{
-                project  = $compResult.AppProjectFolder
-                appFile  = $compResult.AppFile
-                success  = $compResult.Success
-                duration = $compResult.Duration.ToString()
-            }
-            
-            if (-not $compResult.Success) {
-                $appInfo['error'] = $compResult.ErrorMessage
-                $appInfo['errors'] = $compResult.Errors
-                $appInfo['warnings'] = $compResult.Warnings
-                $allCompiled = $false
-                
-                # Add error locations to AI context
-                foreach ($err in $compResult.Errors) {
-                    $output.aiContext.errorLocations += [ordered]@{
-                        type     = 'compilation'
-                        file     = $err.file
-                        line     = $err.line
-                        column   = $err.column
-                        code     = $err.code
-                        message  = $err.message
-                    }
-                }
-            }
-            $output.compilation.apps += $appInfo
-        }
-        $output.compilation.success = $allCompiled
     }
     
     # Process test results
@@ -903,109 +592,7 @@ function Invoke-BCTestRunnerFromJson {
     return Invoke-BCTestRunner `
         -ConfigPath $params.configPath `
         -EnvironmentName $params.environmentName `
-        -SkipCompile:$params.skipCompile `
-        -SkipPublish:$params.skipPublish `
         -Credential $credential
-}
-
-function Invoke-BCCompileFromJson {
-    <#
-    .SYNOPSIS
-        Compile apps - accepts JSON input via parameter.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$InputJson
-    )
-    
-    $params = $InputJson | ConvertFrom-Json
-    $config = Get-BCTestRunnerConfig -ConfigPath $params.configPath -EnvironmentName $params.environmentName
-    $env = $config.selectedEnvironment
-    $credential = ConvertTo-PSCredentialFromJson -CredentialInfo $params.credential
-    
-    $apps = if ($params.apps) { $params.apps } else { $config.apps }
-    $compilationResults = @()
-    
-    foreach ($appPath in $apps) {
-        $fullAppPath = if ([System.IO.Path]::IsPathRooted($appPath)) { 
-            $appPath 
-        } else { 
-            Join-Path $config.workspacePath $appPath 
-        }
-        
-        $compileResult = Compile-ALApp `
-            -ContainerName $env.containerName `
-            -AppProjectFolder $fullAppPath `
-            -Credential $credential `
-            -CompilationOptions $config.compilation
-        
-        $compilationResults += $compileResult
-        
-        if (-not $compileResult.Success) {
-            break
-        }
-    }
-    
-    $allSuccess = ($compilationResults | Where-Object { -not $_.Success }).Count -eq 0
-    
-    return [PSCustomObject]@{
-        Success = $allSuccess
-        Apps    = $compilationResults
-        Duration = ($compilationResults | ForEach-Object { $_.Duration.TotalSeconds } | Measure-Object -Sum).Sum
-    }
-}
-
-function Invoke-BCPublishFromJson {
-    <#
-    .SYNOPSIS
-        Publish apps - accepts JSON input via parameter.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$InputJson
-    )
-    
-    $params = $InputJson | ConvertFrom-Json
-    $config = Get-BCTestRunnerConfig -ConfigPath $params.configPath -EnvironmentName $params.environmentName
-    $env = $config.selectedEnvironment
-    $credential = ConvertTo-PSCredentialFromJson -CredentialInfo $params.credential
-    
-    $publishResults = @()
-    
-    # Find compiled app files
-    foreach ($appPath in $config.apps) {
-        $fullAppPath = if ([System.IO.Path]::IsPathRooted($appPath)) { 
-            $appPath 
-        } else { 
-            Join-Path $config.workspacePath $appPath 
-        }
-        
-        $appFiles = Get-ChildItem -Path $fullAppPath -Filter "*.app" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        
-        if ($appFiles) {
-            $publishResult = Publish-BCApp `
-                -ContainerName $env.containerName `
-                -AppFile $appFiles.FullName `
-                -Credential $credential `
-                -SyncMode $env.syncMode
-            
-            $publishResults += $publishResult
-            
-            if (-not $publishResult.Success) {
-                break
-            }
-        }
-    }
-    
-    $allSuccess = ($publishResults | Where-Object { -not $_.Success }).Count -eq 0
-    
-    return [PSCustomObject]@{
-        Success = $allSuccess
-        Apps    = $publishResults
-        Duration = ($publishResults | ForEach-Object { $_.Duration.TotalSeconds } | Measure-Object -Sum).Sum
-    }
 }
 
 function Invoke-BCExecuteTestsFromJson {
@@ -1080,8 +667,7 @@ function Invoke-BCTestRunner {
         Main entry point for the BC Test Runner.
     
     .DESCRIPTION
-        Compiles AL apps, publishes them to a BC container, runs tests,
-        and exports results in an AI-friendly format.
+        Runs tests in a BC container and exports results in an AI-friendly format.
     
     .PARAMETER EnvironmentName
         Name of the environment configuration to use.
@@ -1089,20 +675,11 @@ function Invoke-BCTestRunner {
     .PARAMETER ConfigPath
         Path to the configuration file.
     
-    .PARAMETER SkipCompile
-        Skip the compilation step.
-    
-    .PARAMETER SkipPublish
-        Skip the publish step.
-    
     .PARAMETER Credential
         Credentials for container authentication. If not provided, will prompt.
     
     .EXAMPLE
         Invoke-BCTestRunner -EnvironmentName 'docker-local'
-    
-    .EXAMPLE
-        Invoke-BCTestRunner -EnvironmentName 'dev-server' -SkipCompile
     #>
     [CmdletBinding()]
     param(
@@ -1111,12 +688,6 @@ function Invoke-BCTestRunner {
         
         [Parameter()]
         [string]$ConfigPath,
-        
-        [Parameter()]
-        [switch]$SkipCompile,
-        
-        [Parameter()]
-        [switch]$SkipPublish,
         
         [Parameter()]
         [PSCredential]$Credential
@@ -1161,66 +732,6 @@ function Invoke-BCTestRunner {
     $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $testResultsXml = Join-Path $resultsPath "TestResults_$timestamp.xml"
     $aiResultsJson = Join-Path $resultsPath "TestResults_${timestamp}_AI.json"
-    $htmlReport = Join-Path $resultsPath "TestReport_$timestamp.html"
-    
-    $compilationResults = @()
-    $testResults = $null
-    
-    # Compile apps
-    if (-not $SkipCompile) {
-        Write-Host "`n--- Compilation Phase ---`n"
-        
-        $appCount = $config.apps.Count
-        $appIndex = 0
-        
-        foreach ($appPath in $config.apps) {
-            $appIndex++
-            
-            $fullAppPath = if ([System.IO.Path]::IsPathRooted($appPath)) { 
-                $appPath 
-            } else { 
-                Join-Path $config.workspacePath $appPath 
-            }
-            
-            $compileResult = Compile-ALApp `
-                -ContainerName $env.containerName `
-                -AppProjectFolder $fullAppPath `
-                -Credential $Credential `
-                -CompilationOptions $config.compilation
-            
-            $compilationResults += $compileResult
-            
-            if (-not $compileResult.Success) {
-                Write-Host "Compilation failed. Stopping execution."
-                break
-            }
-        }
-    }
-    
-    # Publish apps
-    $allCompiled = ($compilationResults | Where-Object { -not $_.Success }).Count -eq 0
-    
-    if (-not $SkipPublish -and ($allCompiled -or $SkipCompile)) {
-        Write-Host "`n--- Publishing Phase ---`n"
-        
-        $appIndex = 0
-        foreach ($compResult in $compilationResults) {
-            $appIndex++
-            
-            if ($compResult.AppFile -and (Test-Path $compResult.AppFile)) {
-                $publishResult = Publish-BCApp `
-                    -ContainerName $env.containerName `
-                    -AppFile $compResult.AppFile `
-                    -Credential $Credential `
-                    -SyncMode $env.syncMode
-                
-                if (-not $publishResult.Success) {
-                    Write-Host "Publishing failed. Stopping execution."
-                    break
-                }
-            }
-        }
-    }
     
     # Run tests
     Write-Host "`n--- Test Execution Phase ---`n"
@@ -1239,7 +750,6 @@ function Invoke-BCTestRunner {
     Export-TestResultsForAI `
         -OutputPath $aiResultsJson `
         -Environment $env `
-        -CompilationResults $compilationResults `
         -TestResults $testResults
     
     
@@ -1255,12 +765,10 @@ function Invoke-BCTestRunner {
     Write-Host "========================================`n"
     
     return [PSCustomObject]@{
-        Success            = $testResults.Success -and $allCompiled
-        CompilationResults = $compilationResults
-        TestResults        = $testResults
-        AIResultsFile      = $aiResultsJson
-        HtmlReportFile     = $htmlReport
-        Duration           = $overallStopwatch.Elapsed
+        Success       = $testResults.Success
+        TestResults   = $testResults
+        AIResultsFile = $aiResultsJson
+        Duration      = $overallStopwatch.Elapsed
     }
 }
 
@@ -1270,11 +778,7 @@ function Invoke-BCTestRunner {
 Export-ModuleMember -Function @(
     'Invoke-BCTestRunner',
     'Invoke-BCTestRunnerFromJson',
-    'Invoke-BCCompileFromJson',
-    'Invoke-BCPublishFromJson',
     'Invoke-BCExecuteTestsFromJson',
-    'Compile-ALApp',
-    'Publish-BCApp',
     'Invoke-BCTests',
     'Export-TestResultsForAI',
     'Get-BCTestRunnerConfig'
