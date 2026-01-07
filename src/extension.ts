@@ -263,19 +263,13 @@ async function runTests(options: {
           runner.cancel();
         });
 
-        progress.report({ message: "Starting test run..." });
+        progress.report({ message: "Running tests..." });
 
         const result = await runner.runTests(configPath, env.name, {
           skipCompile: options.skipCompile,
           skipPublish: options.skipPublish,
           credential,
           cancellationToken: token,
-          onProgress: (update) => {
-            progress.report({
-              message: update.status || update.activity,
-              increment: update.percentComplete,
-            });
-          },
         });
 
         if (result.cancelled) {
@@ -393,12 +387,6 @@ async function compileApps(): Promise<void> {
           {
             credential,
             cancellationToken: token,
-            onProgress: (update) => {
-              progress.report({
-                message: update.status || update.activity,
-                increment: update.percentComplete,
-              });
-            },
           }
         );
 
@@ -458,12 +446,6 @@ async function publishApps(): Promise<void> {
         const result = await runner.publishApps(configPath, env.name, {
           credential,
           cancellationToken: token,
-          onProgress: (update) => {
-            progress.report({
-              message: update.status || update.activity,
-              increment: update.percentComplete,
-            });
-          },
         });
 
         if (result.success) {

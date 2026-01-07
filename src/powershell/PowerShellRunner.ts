@@ -8,6 +8,8 @@
 import * as vscode from "vscode";
 import { spawn, ChildProcess } from "child_process";
 import * as path from "path";
+import * as os from "os";
+import * as fs from "fs";
 
 /**
  * Result from PowerShell execution
@@ -33,16 +35,6 @@ export interface PowerShellError {
 }
 
 /**
- * Progress update from PowerShell
- */
-export interface ProgressUpdate {
-  activity: string;
-  status: string;
-  percentComplete: number;
-  currentOperation?: string;
-}
-
-/**
  * Options for PowerShell execution
  */
 export interface ExecutionOptions {
@@ -52,8 +44,6 @@ export interface ExecutionOptions {
   timeout?: number;
   /** Cancellation token */
   cancellationToken?: vscode.CancellationToken;
-  /** Progress callback */
-  onProgress?: (progress: ProgressUpdate) => void;
   /** Output callback for raw output */
   onOutput?: (output: string) => void;
   /** Environment variables to set */
@@ -410,19 +400,31 @@ export class PowerShellRunner {
                 $inputJson = [Console]::In.ReadToEnd()
                 $params = $inputJson | ConvertFrom-Json
                 $result = & { ${functionName} -InputJson $inputJson } 3>$null
-                @{
+                $output = @{
                     Success = $true
                     Data = $result
-                } | ConvertTo-Json -Depth 20
+                }
+                if ($env:BC_RESULT_FILE) {
+                    $output | ConvertTo-Json -Depth 100 | Out-File -FilePath $env:BC_RESULT_FILE -Encoding utf8 -Force
+                    Write-Host "##RESULT_WRITTEN##"
+                } else {
+                    $output | ConvertTo-Json -Depth 20
+                }
             } catch {
-                @{
+                $output = @{
                     Success = $false
                     Error = $_.Exception.Message
                     Type = $_.Exception.GetType().Name
                     StackTrace = $_.ScriptStackTrace
                     TargetObject = $_.TargetObject
                     FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-                } | ConvertTo-Json -Depth 10
+                }
+                if ($env:BC_RESULT_FILE) {
+                    $output | ConvertTo-Json -Depth 100 | Out-File -FilePath $env:BC_RESULT_FILE -Encoding utf8 -Force
+                    Write-Host "##RESULT_WRITTEN##"
+                } else {
+                    $output | ConvertTo-Json -Depth 10
+                }
             }
         `;
   }
@@ -434,147 +436,45 @@ export class PowerShellRunner {
     script: string,
     options?: ExecutionOptions
   ): Promise<PowerShellResult<T>> {
-    const result = await this.executeRaw(script, options);
-    return this.parseJsonResult<T>(result);
+    // Generate unique temp file path
+    const tempFilePath = path.join(
+      os.tmpdir(),
+      `bctest-${process.pid}-${Date.now()}-${Math.random()
+        .toString(36)
+        .substring(7)}.json`
+    );
+
+    // Pass temp file path via environment variable
+    const envWithFile = {
+      ...options?.env,
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      BC_RESULT_FILE: tempFilePath,
+    };
+
+    const result = await this.executeRaw(script, {
+      ...options,
+      env: envWithFile,
+    });
+
+    return this.parseJsonResult<T>(result, tempFilePath);
   }
 
   /**
-   * Strip all ANSI escape codes and control characters from a string
-   */
-  private stripAnsiCodes(input: string): string {
-    // Build regex patterns using String.fromCharCode to ensure proper ESC character
-    const ESC = String.fromCharCode(27); // 0x1B
-
-    let result = input;
-
-    // CSI sequences: ESC [ ... letter (most common for colors)
-    const csiPattern = new RegExp(
-      ESC.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\[[0-9;]*[A-Za-z]",
-      "g"
-    );
-    result = result.replace(csiPattern, "");
-
-    // OSC sequences: ESC ] ... BEL
-    const BEL = String.fromCharCode(7);
-    const oscPattern = new RegExp(
-      ESC.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
-        "\\][^" +
-        BEL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +
-        "]*" +
-        BEL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-      "g"
-    );
-    result = result.replace(oscPattern, "");
-
-    // Remove any remaining ESC characters and following character
-    result = result.replace(
-      new RegExp(ESC.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ".", "g"),
-      ""
-    );
-
-    // Remove any standalone ESC characters
-    result = result.replace(
-      new RegExp(ESC.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-      ""
-    );
-
-    // Remove other control characters except newline (\n=10), carriage return (\r=13), tab (\t=9)
-    // eslint-disable-next-line no-control-regex
-    result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
-
-    return result;
-  }
-
-  /**
-   * Extract the last valid JSON object from mixed output
-   */
-  private extractJson(input: string): string {
-    // Clean ANSI codes first
-    let cleaned = this.stripAnsiCodes(input);
-
-    // Also remove ANSI-like sequences that might be missing the ESC character
-    // This handles cases where [33;1m appears without ESC prefix
-    cleaned = cleaned.replace(/\[[0-9;]*m/g, "");
-
-    // Remove WARNING/VERBOSE/DEBUG lines that PowerShell outputs
-    cleaned = cleaned.replace(/^WARNING:.*$/gm, "");
-    cleaned = cleaned.replace(/^VERBOSE:.*$/gm, "");
-    cleaned = cleaned.replace(/^DEBUG:.*$/gm, "");
-
-    // Remove progress markers
-    cleaned = cleaned.replace(/##PROGRESS##.*?##/g, "");
-
-    // Find all potential JSON object starts with "Success" or "Data" key
-    const patterns = [
-      /\{\s*"Success"\s*:/g,
-      /\{\s*"Data"\s*:/g,
-      /\{\s*\r?\n\s*"Success"\s*:/g,
-      /\{\s*\r?\n\s*"Data"\s*:/g,
-    ];
-
-    let lastJsonStart = -1;
-    for (const pattern of patterns) {
-      let match;
-      while ((match = pattern.exec(cleaned)) !== null) {
-        lastJsonStart = Math.max(lastJsonStart, match.index);
-      }
-    }
-
-    if (lastJsonStart >= 0) {
-      // Extract from last JSON start and find matching closing brace
-      const jsonCandidate = cleaned.substring(lastJsonStart);
-      let braceCount = 0;
-      let inString = false;
-      let escape = false;
-      let jsonEnd = -1;
-
-      for (let i = 0; i < jsonCandidate.length; i++) {
-        const char = jsonCandidate[i];
-
-        if (escape) {
-          escape = false;
-          continue;
-        }
-
-        if (char === "\\" && inString) {
-          escape = true;
-          continue;
-        }
-
-        if (char === '"' && !escape) {
-          inString = !inString;
-          continue;
-        }
-
-        if (!inString) {
-          if (char === "{") {
-            braceCount++;
-          } else if (char === "}") {
-            braceCount--;
-            if (braceCount === 0) {
-              jsonEnd = i + 1;
-              break;
-            }
-          }
-        }
-      }
-
-      if (jsonEnd > 0) {
-        return jsonCandidate.substring(0, jsonEnd);
-      }
-    }
-
-    // Fallback: return cleaned output trimmed
-    return cleaned.trim();
-  }
-
-  /**
-   * Parse JSON result from PowerShell
+   * Parse JSON result from PowerShell temp file
    */
   private parseJsonResult<T>(
-    result: PowerShellResult<string>
+    result: PowerShellResult<string>,
+    tempFilePath?: string
   ): PowerShellResult<T> {
     if (result.cancelled) {
+      // Clean up temp file on cancellation
+      if (tempFilePath && fs.existsSync(tempFilePath)) {
+        try {
+          fs.unlinkSync(tempFilePath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
       return {
         success: false,
         error: "Operation was cancelled",
@@ -583,33 +483,102 @@ export class PowerShellRunner {
       };
     }
 
-    if (!result.success || !result.data) {
+    if (!result.success) {
+      // Clean up temp file on PowerShell execution failure
+      if (tempFilePath && fs.existsSync(tempFilePath)) {
+        try {
+          fs.unlinkSync(tempFilePath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
       return {
         success: false,
-        error: result.error ?? "No data returned from PowerShell",
+        error: result.error ?? "PowerShell execution failed",
+        duration: result.duration,
+        cancelled: false,
+      };
+    }
+
+    // If we have a temp file path, read from it
+    if (tempFilePath) {
+      try {
+        if (!fs.existsSync(tempFilePath)) {
+          // Check stdout for ##RESULT_WRITTEN## marker
+          if (result.data?.includes("##RESULT_WRITTEN##")) {
+            return {
+              success: false,
+              error:
+                "PowerShell indicated result was written but temp file not found",
+              duration: result.duration,
+              cancelled: false,
+            };
+          }
+          // Fall through to parse from stdout if no marker
+        } else {
+          const fileContent = fs.readFileSync(tempFilePath, "utf8");
+
+          // Clean up temp file after reading
+          try {
+            fs.unlinkSync(tempFilePath);
+          } catch {
+            // Ignore cleanup errors
+          }
+
+          const parsed = JSON.parse(fileContent);
+
+          if (parsed.Success === false) {
+            return {
+              success: false,
+              error: parsed.Error,
+              errorDetails: {
+                message: parsed.Error,
+                type: parsed.Type,
+                scriptStackTrace: parsed.StackTrace,
+                targetObject: parsed.TargetObject,
+                fullyQualifiedErrorId: parsed.FullyQualifiedErrorId,
+              },
+              duration: result.duration,
+              cancelled: false,
+            };
+          }
+
+          return {
+            success: true,
+            data: parsed.Data as T,
+            duration: result.duration,
+            cancelled: false,
+          };
+        }
+      } catch (e) {
+        this.outputChannel.appendLine(
+          `[ERROR] Failed to read/parse temp file: ${
+            e instanceof Error ? e.message : String(e)
+          }`
+        );
+        return {
+          success: false,
+          error: `Failed to parse result file: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+          duration: result.duration,
+          cancelled: false,
+        };
+      }
+    }
+
+    // Fallback: try to parse from stdout (for backward compatibility or if file approach fails)
+    if (!result.data) {
+      return {
+        success: false,
+        error: "No data returned from PowerShell",
         duration: result.duration,
         cancelled: false,
       };
     }
 
     try {
-      // Extract and clean JSON from the output
-      const cleanedData = this.extractJson(result.data);
-
-      // Debug: log first bytes as hex to see if ANSI codes remain
-      const firstBytes = cleanedData
-        .substring(0, 50)
-        .split("")
-        .map((c) => c.charCodeAt(0).toString(16).padStart(2, "0"))
-        .join(" ");
-      this.outputChannel.appendLine(
-        `[DEBUG] First 50 bytes hex: ${firstBytes}`
-      );
-      this.outputChannel.appendLine(
-        `[DEBUG] Cleaned data starts with: ${cleanedData.substring(0, 100)}`
-      );
-
-      const parsed = JSON.parse(cleanedData);
+      const parsed = JSON.parse(result.data);
       if (parsed.Success === false) {
         return {
           success: false,
@@ -632,12 +601,13 @@ export class PowerShellRunner {
         cancelled: false,
       };
     } catch (e) {
-      // Log the problematic output for debugging
       this.outputChannel.appendLine(
-        `[DEBUG] Failed to parse output. First 500 chars: ${result.data?.substring(
-          0,
-          500
-        )}`
+        `[ERROR] Failed to parse PowerShell output: ${
+          e instanceof Error ? e.message : String(e)
+        }`
+      );
+      this.outputChannel.appendLine(
+        `[DEBUG] Output (first 500 chars): ${result.data?.substring(0, 500)}`
       );
       return {
         success: false,
@@ -723,19 +693,7 @@ export class PowerShellRunner {
         const text = data.toString();
         stdout += text;
         options?.onOutput?.(text);
-
-        // Parse progress updates from stdout
-        const progressMatch = text.match(/##PROGRESS##({.*})##/);
-        if (progressMatch) {
-          try {
-            const progress = JSON.parse(progressMatch[1]) as ProgressUpdate;
-            options?.onProgress?.(progress);
-          } catch {
-            // Ignore parse errors for progress
-          }
-        } else {
-          this.outputChannel.append(text);
-        }
+        this.outputChannel.append(text);
       });
 
       proc.stderr.on("data", (data: Buffer) => {
@@ -771,73 +729,10 @@ export class PowerShellRunner {
           return;
         }
 
-        // Extract JSON from stdout (may have progress messages mixed in)
-        // Also strip ANSI escape codes (color codes like [33;1m)
-        // ESC character is \x1B (decimal 27)
-        const ESC = String.fromCharCode(27);
-        const ansiRegex = new RegExp(`${ESC}\\[[0-9;]*[a-zA-Z]`, "g");
-        const oscRegex = new RegExp(
-          `${ESC}\\][^${String.fromCharCode(7)}]*${String.fromCharCode(7)}`,
-          "g"
-        );
-
-        let cleanedOutput = stdout
-          .replace(/##PROGRESS##.*?##/g, "")
-          .replace(ansiRegex, "")
-          .replace(oscRegex, "")
-          // Also remove any remaining escape sequences
-          // eslint-disable-next-line no-control-regex
-          .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "")
-          // Remove standalone escape characters
-          // eslint-disable-next-line no-control-regex
-          .replace(/[\x00-\x1F]/g, (char) =>
-            char === "\n" || char === "\r" || char === "\t" ? char : ""
-          )
-          .trim();
-
-        // Find the LAST JSON object that contains "Success" key (our result wrapper)
-        // Look for the pattern that starts our JSON response
-        const jsonStartPatterns = [
-          /\{\s*\r?\n\s*"Success"\s*:/g,
-          /\{\s*\r?\n\s*"Data"\s*:/g,
-          /\{\s*"Success"\s*:/g,
-          /\{\s*"Data"\s*:/g,
-        ];
-
-        let lastJsonStart = -1;
-        for (const pattern of jsonStartPatterns) {
-          let match;
-          while ((match = pattern.exec(cleanedOutput)) !== null) {
-            lastJsonStart = Math.max(lastJsonStart, match.index);
-          }
-        }
-
-        if (lastJsonStart >= 0) {
-          // Extract from the last JSON start to the end and find matching braces
-          const jsonCandidate = cleanedOutput.substring(lastJsonStart);
-          let braceCount = 0;
-          let jsonEnd = -1;
-
-          for (let i = 0; i < jsonCandidate.length; i++) {
-            if (jsonCandidate[i] === "{") {
-              braceCount++;
-            } else if (jsonCandidate[i] === "}") {
-              braceCount--;
-              if (braceCount === 0) {
-                jsonEnd = i + 1;
-                break;
-              }
-            }
-          }
-
-          if (jsonEnd > 0) {
-            cleanedOutput = jsonCandidate.substring(0, jsonEnd);
-          }
-        }
-
+        // Return stdout as-is for file-based or simple parsing
         resolve({
           success: true,
-          data: cleanedOutput,
+          data: stdout,
           duration,
           cancelled: false,
         });

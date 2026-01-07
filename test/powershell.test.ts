@@ -338,7 +338,7 @@ describe("PowerShell Bridge Tests", () => {
 
   describe("Output Streaming", () => {
     interface StreamChunk {
-      type: "stdout" | "stderr" | "progress";
+      type: "stdout" | "stderr";
       data: string;
       timestamp: Date;
     }
@@ -348,13 +348,7 @@ describe("PowerShell Bridge Tests", () => {
       const lines = data.split("\n");
 
       for (const line of lines) {
-        if (line.includes("##PROGRESS##")) {
-          chunks.push({
-            type: "progress",
-            data: line,
-            timestamp: new Date(),
-          });
-        } else if (line.startsWith("ERROR:") || line.startsWith("Exception:")) {
+        if (line.startsWith("ERROR:") || line.startsWith("Exception:")) {
           chunks.push({
             type: "stderr",
             data: line,
@@ -372,14 +366,6 @@ describe("PowerShell Bridge Tests", () => {
       return chunks;
     }
 
-    it("should identify progress markers", () => {
-      const output = '##PROGRESS##{"status":"running"}##';
-      const chunks = parseStreamOutput(output);
-
-      assert.strictEqual(chunks.length, 1);
-      assert.strictEqual(chunks[0].type, "progress");
-    });
-
     it("should identify error output", () => {
       const output = "ERROR: Something went wrong";
       const chunks = parseStreamOutput(output);
@@ -390,13 +376,11 @@ describe("PowerShell Bridge Tests", () => {
 
     it("should handle mixed output", () => {
       const output = `Starting test run
-##PROGRESS##{"status":"compiling"}##
 ERROR: Compilation failed
 Done`;
       const chunks = parseStreamOutput(output);
 
-      assert.strictEqual(chunks.length, 4);
-      assert.strictEqual(chunks.filter((c) => c.type === "progress").length, 1);
+      assert.strictEqual(chunks.length, 3);
       assert.strictEqual(chunks.filter((c) => c.type === "stderr").length, 1);
       assert.strictEqual(chunks.filter((c) => c.type === "stdout").length, 2);
     });

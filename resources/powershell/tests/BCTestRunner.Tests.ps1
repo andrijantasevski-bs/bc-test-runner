@@ -462,20 +462,6 @@ Describe 'Initialize-TestResultsFolder' {
     }
 }
 
-Describe 'Write-ProgressUpdate' {
-    Context 'Progress output format' {
-        It 'Should output progress in expected format' {
-            $output = InModuleScope BCTestRunner {
-                $result = Write-ProgressUpdate -Activity 'Testing' -Status 'Running' -PercentComplete 50 6>&1
-                $result
-            }
-            
-            # The output should contain the progress marker
-            $output | Should -Match '##PROGRESS##'
-        }
-    }
-}
-
 Describe 'JSON Input Functions' {
     Context 'Invoke-BCTestRunnerFromJson parameter parsing' {
         It 'Should parse JSON input correctly' {

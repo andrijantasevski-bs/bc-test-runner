@@ -27,27 +27,6 @@ $PSStyle.OutputRendering = 'PlainText'
 
 #region Helper Functions
 
-function Write-ProgressUpdate {
-    <#
-    .SYNOPSIS
-        Writes a progress update marker to stdout for parsing by Node.js.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$Stage,
-        
-        [Parameter(Mandatory)]
-        [int]$Progress,
-        
-        [Parameter(Mandatory)]
-        [string]$Message
-    )
-    
-    Write-Host "[PROGRESS:${Stage}:${Progress}:${Message}]"
-}
-
-
 function Get-BCTestRunnerConfig {
     <#
     .SYNOPSIS
@@ -1153,11 +1132,8 @@ function Invoke-BCTestRunner {
     Write-Host "  BC Test Runner - Starting Execution  "
     Write-Host "========================================`n"
     
-    Write-ProgressUpdate -Stage "init" -Progress 0 -Message "Initializing"
-    
     # Load configuration
     Write-Host "Loading configuration..."
-    Write-ProgressUpdate -Stage "config" -Progress 5 -Message "Loading configuration"
     $config = Get-BCTestRunnerConfig -ConfigPath $ConfigPath -EnvironmentName $EnvironmentName
     $env = $config.selectedEnvironment
     
@@ -1193,15 +1169,12 @@ function Invoke-BCTestRunner {
     # Compile apps
     if (-not $SkipCompile) {
         Write-Host "`n--- Compilation Phase ---`n"
-        Write-ProgressUpdate -Stage "compile" -Progress 10 -Message "Starting compilation"
         
         $appCount = $config.apps.Count
         $appIndex = 0
         
         foreach ($appPath in $config.apps) {
             $appIndex++
-            $progress = 10 + (($appIndex / $appCount) * 30)
-            Write-ProgressUpdate -Stage "compile" -Progress $progress -Message "Compiling app $appIndex of $appCount"
             
             $fullAppPath = if ([System.IO.Path]::IsPathRooted($appPath)) { 
                 $appPath 
@@ -1229,13 +1202,10 @@ function Invoke-BCTestRunner {
     
     if (-not $SkipPublish -and ($allCompiled -or $SkipCompile)) {
         Write-Host "`n--- Publishing Phase ---`n"
-        Write-ProgressUpdate -Stage "publish" -Progress 45 -Message "Starting publishing"
         
         $appIndex = 0
         foreach ($compResult in $compilationResults) {
             $appIndex++
-            $progress = 45 + (($appIndex / $compilationResults.Count) * 20)
-            Write-ProgressUpdate -Stage "publish" -Progress $progress -Message "Publishing app $appIndex of $($compilationResults.Count)"
             
             if ($compResult.AppFile -and (Test-Path $compResult.AppFile)) {
                 $publishResult = Publish-BCApp `
@@ -1254,7 +1224,6 @@ function Invoke-BCTestRunner {
     
     # Run tests
     Write-Host "`n--- Test Execution Phase ---`n"
-    Write-ProgressUpdate -Stage "test" -Progress 70 -Message "Running tests"
     
     $testResults = Invoke-BCTests `
         -ContainerName $env.containerName `
@@ -1266,7 +1235,6 @@ function Invoke-BCTestRunner {
     
     # Export results
     Write-Host "`n--- Exporting Results ---`n"
-    Write-ProgressUpdate -Stage "export" -Progress 95 -Message "Exporting results"
     
     Export-TestResultsForAI `
         -OutputPath $aiResultsJson `
@@ -1276,7 +1244,6 @@ function Invoke-BCTestRunner {
     
     
     $overallStopwatch.Stop()
-    Write-ProgressUpdate -Stage "complete" -Progress 100 -Message "Execution complete"
     
     # Summary
     Write-Host "`n========================================"

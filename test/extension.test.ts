@@ -392,55 +392,6 @@ c:\\project\\App\\src\\page.al(30,1): warning AL0003: Warning 1`;
     });
   });
 
-  describe("Progress Reporting", () => {
-    interface ProgressUpdate {
-      activity: string;
-      status: string;
-      percentComplete: number;
-      currentOperation?: string;
-    }
-
-    function parseProgressOutput(output: string): ProgressUpdate | null {
-      const match = output.match(/##PROGRESS##(.+?)##/);
-      if (!match) {
-        return null;
-      }
-
-      try {
-        return JSON.parse(match[1]) as ProgressUpdate;
-      } catch {
-        return null;
-      }
-    }
-
-    it("should parse progress marker format", () => {
-      const output =
-        '##PROGRESS##{"activity":"Testing","status":"Running","percentComplete":50}##';
-      const progress = parseProgressOutput(output);
-
-      assert.notStrictEqual(progress, null);
-      assert.strictEqual(progress?.activity, "Testing");
-      assert.strictEqual(progress?.status, "Running");
-      assert.strictEqual(progress?.percentComplete, 50);
-    });
-
-    it("should handle output without progress marker", () => {
-      const output = "Regular output without progress";
-      const progress = parseProgressOutput(output);
-
-      assert.strictEqual(progress, null);
-    });
-
-    it("should extract progress from mixed output", () => {
-      const output =
-        'Some text ##PROGRESS##{"activity":"Compile","status":"Done","percentComplete":100}## More text';
-      const progress = parseProgressOutput(output);
-
-      assert.notStrictEqual(progress, null);
-      assert.strictEqual(progress?.activity, "Compile");
-    });
-  });
-
   describe("AI Results Format", () => {
     interface AITestResults {
       schema: string;
