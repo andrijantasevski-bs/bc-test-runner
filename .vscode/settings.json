@@ -4,7 +4,7 @@
 
   // Exclude build outputs from search and file watcher
   "files.exclude": {
-    "**/dist": true,
+    "**/dist": false,
     "**/out": true,
     "**/node_modules": true
   },

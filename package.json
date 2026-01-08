@@ -5,6 +5,10 @@
   "version": "1.0.0",
   "publisher": "business-solutions",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/bc-test-runner.git"
+  },
   "engines": {
     "vscode": "^1.95.0"
   },
@@ -202,12 +206,12 @@
   },
   "scripts": {
     "vscode:prepublish": "pnpm compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "compile": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
     "pretest": "pnpm compile && pnpm lint",
     "lint": "eslint src --ext ts",
     "test": "node ./dist/test/runTest.js",
-    "package": "vsce package --out dist/"
+    "package": "vsce package --no-dependencies --out dist/"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",
@@ -218,6 +222,7 @@
     "@typescript-eslint/parser": "^6.19.0",
     "@vscode/test-electron": "^2.3.8",
     "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.27.2",
     "eslint": "^8.56.0",
     "mocha": "^10.2.0",
     "typescript": "^5.3.3"
