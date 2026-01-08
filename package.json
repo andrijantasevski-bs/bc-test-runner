@@ -136,7 +136,16 @@
       {
         "name": "bc-test-run",
         "displayName": "Run BC Tests",
+        "toolReferenceName": "runBCTests",
+        "icon": "$(testing-run-all-icon)",
+        "tags": [
+          "testing",
+          "business-central",
+          "bc-test-runner"
+        ],
         "modelDescription": "Execute full Business Central test pipeline: compile apps, publish to container, run tests, and return results. Use this for complete test iteration cycles.",
+        "userDescription": "Run the full BC test pipeline: compile, publish, and execute tests.",
+        "canBeReferencedInPrompt": true,
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -160,7 +169,16 @@
       {
         "name": "bc-test-execute",
         "displayName": "Execute BC Tests",
+        "toolReferenceName": "executeBCTests",
+        "icon": "$(testing-run-icon)",
+        "tags": [
+          "testing",
+          "business-central",
+          "bc-test-runner"
+        ],
         "modelDescription": "Run tests in Business Central container (assumes apps are already published). Returns detailed test results with pass/fail status, durations, and failure details.",
+        "userDescription": "Execute BC tests only (skip compile/publish steps).",
+        "canBeReferencedInPrompt": true,
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -182,7 +200,16 @@
       {
         "name": "bc-test-results",
         "displayName": "Get BC Test Results",
+        "toolReferenceName": "bcTestResults",
+        "icon": "$(checklist)",
+        "tags": [
+          "testing",
+          "business-central",
+          "bc-test-runner"
+        ],
         "modelDescription": "Read the latest test results from output folder. Returns structured JSON with test summary, failures, and suggested actions.",
+        "userDescription": "Get the latest BC test results from the output folder.",
+        "canBeReferencedInPrompt": true,
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -196,7 +223,16 @@
       {
         "name": "bc-test-config",
         "displayName": "Get BC Test Configuration",
+        "toolReferenceName": "bcTestConfig",
+        "icon": "$(gear)",
+        "tags": [
+          "configuration",
+          "business-central",
+          "bc-test-runner"
+        ],
         "modelDescription": "Read bctest.config.json and list available environments, apps, and current settings.",
+        "userDescription": "Get the BC test configuration and available environments.",
+        "canBeReferencedInPrompt": true,
         "inputSchema": {
           "type": "object",
           "properties": {}
