@@ -100,6 +100,57 @@ export class PowerShellRunner {
   }
 
   /**
+   * Check if Docker is running (with timeout to prevent hanging)
+   */
+  async checkDocker(): Promise<{ isRunning: boolean; error?: string }> {
+    try {
+      return await new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          if (proc && !proc.killed) {
+            proc.kill();
+          }
+          resolve({
+            isRunning: false,
+            error:
+              "Docker check timed out after 3 seconds. Docker may not be responding.",
+          });
+        }, 3000);
+
+        const proc = spawn("docker", ["ps"], {
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+
+        proc.on("error", (err: Error) => {
+          clearTimeout(timeout);
+          resolve({
+            isRunning: false,
+            error: `Docker command failed: ${err.message}`,
+          });
+        });
+
+        proc.on("exit", (code: number | null) => {
+          clearTimeout(timeout);
+          if (code === 0) {
+            resolve({ isRunning: true });
+          } else {
+            resolve({
+              isRunning: false,
+              error: `Docker is not running (exit code: ${code})`,
+            });
+          }
+        });
+      });
+    } catch (error) {
+      return {
+        isRunning: false,
+        error: `Docker check failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      };
+    }
+  }
+
+  /**
    * Check if BcContainerHelper module is available
    */
   async checkBcContainerHelper(): Promise<boolean> {

@@ -211,6 +211,21 @@ async function runTests(): Promise<void> {
       return;
     }
 
+    // Check Docker if using containerName
+    if (env.containerName) {
+      outputChannel.appendLine("Checking Docker availability...");
+      const dockerCheck = await runner.checkDocker();
+      if (!dockerCheck.isRunning) {
+        const errorMsg = dockerCheck.error || "Docker is not running";
+        vscode.window.showErrorMessage(
+          `${errorMsg}. Please start Docker Desktop and try again.`
+        );
+        outputChannel.appendLine(`[ERROR] ${errorMsg}`);
+        return;
+      }
+      outputChannel.appendLine("Docker is running");
+    }
+
     // Get credentials
     let credential: { username: string; password: string } | undefined;
     if (
@@ -302,17 +317,46 @@ async function runTests(): Promise<void> {
           testResultsProvider.refresh();
         } else {
           updateStatusBar("$(testing-error-icon) Error");
-          vscode.window.showErrorMessage(`Test run failed: ${result.error}`);
+
+          // Check if it's a Docker error and provide more helpful message
+          if (result.error && result.error.includes("Docker is not running")) {
+            vscode.window
+              .showErrorMessage(
+                "Docker is not running. Please start Docker Desktop and try again.",
+                "Open Docker Desktop"
+              )
+              .then((selection) => {
+                if (selection === "Open Docker Desktop") {
+                  // Try to launch Docker Desktop (Windows-specific)
+                  vscode.env.openExternal(vscode.Uri.parse("docker://"));
+                }
+              });
+          } else {
+            vscode.window.showErrorMessage(`Test run failed: ${result.error}`);
+          }
         }
       }
     );
   } catch (error) {
     updateStatusBar("$(testing-error-icon) Error");
-    vscode.window.showErrorMessage(
-      `Error running tests: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
+
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Check if it's a Docker error
+    if (errorMessage.includes("Docker is not running")) {
+      vscode.window
+        .showErrorMessage(
+          "Docker is not running. Please start Docker Desktop and try again.",
+          "Open Docker Desktop"
+        )
+        .then((selection) => {
+          if (selection === "Open Docker Desktop") {
+            vscode.env.openExternal(vscode.Uri.parse("docker://"));
+          }
+        });
+    } else {
+      vscode.window.showErrorMessage(`Error running tests: ${errorMessage}`);
+    }
   } finally {
     vscode.commands.executeCommand(
       "setContext",
