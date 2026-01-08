@@ -626,6 +626,11 @@ function Invoke-BCTestRunnerFromJson {
     
     .PARAMETER InputJson
         JSON string containing all parameters.
+    
+    .NOTES
+        This function returns the result directly. The caller (TypeScript buildInvokeScript)
+        is responsible for writing to BC_RESULT_FILE. Do NOT call Write-JsonResult here
+        as that would cause a double-write where the TypeScript wrapper overwrites the file.
     #>
     [CmdletBinding()]
     param(
@@ -633,43 +638,29 @@ function Invoke-BCTestRunnerFromJson {
         [string]$InputJson
     )
     
-    try {
-        $params = $InputJson | ConvertFrom-Json
-        
-        $credential = ConvertTo-PSCredentialFromJson -CredentialInfo $params.credential
-        
-        $result = Invoke-BCTestRunner `
-            -ConfigPath $params.configPath `
-            -EnvironmentName $params.environmentName `
-            -Credential $credential
-        
-        # Write result to file or return for stdout
-        Write-JsonResult -Result $result
-    }
-    catch {
-        # Handle errors by writing error result to file
-        if ($env:BC_RESULT_FILE) {
-            $errorWrapper = @{
-                Success = $false
-                Error = $_.Exception.Message
-                Type = $_.Exception.GetType().FullName
-                StackTrace = $_.ScriptStackTrace
-                TargetObject = $_.TargetObject
-                FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-            }
-            $errorWrapper | ConvertTo-Json -Depth 10 -Compress | Out-File -FilePath $env:BC_RESULT_FILE -Encoding utf8 -NoNewline
-            Write-Host "##RESULT_WRITTEN##"
-        }
-        else {
-            throw
-        }
-    }
+    # Parse input and run tests - let caller handle the result
+    $params = $InputJson | ConvertFrom-Json
+    
+    $credential = ConvertTo-PSCredentialFromJson -CredentialInfo $params.credential
+    
+    $result = Invoke-BCTestRunner `
+        -ConfigPath $params.configPath `
+        -EnvironmentName $params.environmentName `
+        -Credential $credential
+    
+    # Return result directly - TypeScript wrapper handles file writing
+    return $result
 }
 
 function Invoke-BCExecuteTestsFromJson {
     <#
     .SYNOPSIS
         Execute tests only - accepts JSON input via parameter.
+    
+    .NOTES
+        This function returns the result directly. The caller (TypeScript buildInvokeScript)
+        is responsible for writing to BC_RESULT_FILE. Do NOT call Write-JsonResult here
+        as that would cause a double-write where the TypeScript wrapper overwrites the file.
     #>
     [CmdletBinding()]
     param(
@@ -677,72 +668,49 @@ function Invoke-BCExecuteTestsFromJson {
         [string]$InputJson
     )
     
-    try {
-        $params = $InputJson | ConvertFrom-Json
-        $config = Get-BCTestRunnerConfig -ConfigPath $params.configPath -EnvironmentName $params.environmentName
-        $env = $config.selectedEnvironment
-        $credential = ConvertTo-PSCredentialFromJson -CredentialInfo $params.credential
-        
-        # Initialize results folder
-        $resultsFolder = if ($config.output.customDirectory) { 
-            $config.output.customDirectory 
-        } elseif ($config.output.resultsFolder) { 
-            $config.output.resultsFolder 
-        } else { 
-            '.testresults' 
-        }
-        $resultsPath = Initialize-TestResultsFolder -WorkspacePath $config.workspacePath -ResultsFolder $resultsFolder -CustomDirectory $config.output.customDirectory
-        
-        $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
-        $testResultsXml = Join-Path $resultsPath "TestResults_$timestamp.xml"
-        $aiResultsJson = Join-Path $resultsPath "TestResults_${timestamp}_AI.json"
-        
-        # Determine codeunit range
-        $codeunitRange = if ($params.codeunitFilter) { $params.codeunitFilter } else { $config.testApp.testCodeunitRange }
-        
-        $testResults = Invoke-BCTests `
-            -ContainerName $env.containerName `
-            -ExtensionId $config.testApp.extensionId `
-            -TestCodeunitRange $codeunitRange `
-            -TestMethod $params.testMethod `
-            -Credential $credential `
-            -TestResultsFile $testResultsXml `
-            -WorkspacePath $config.workspacePath
-        
-        # Export AI-friendly results and get the data object back
-        $aiResults = Export-TestResultsForAI `
-            -OutputPath $aiResultsJson `
-            -Environment $env `
-            -TestResults $testResults
-        
-        # Debug: Check what we got back
-        Write-Host "[DEBUG] aiResults type: $($aiResults.GetType().Name)"
-        Write-Host "[DEBUG] aiResults is null: $($null -eq $aiResults)"
-        if ($aiResults) {
-            Write-Host "[DEBUG] aiResults has schema: $($aiResults.schema)"
-        }
-        
-        # Write the full AI results to temp file for TypeScript consumption
-        Write-JsonResult -Result $aiResults
+    # Parse input
+    $params = $InputJson | ConvertFrom-Json
+    $config = Get-BCTestRunnerConfig -ConfigPath $params.configPath -EnvironmentName $params.environmentName
+    $envConfig = $config.selectedEnvironment
+    $credential = ConvertTo-PSCredentialFromJson -CredentialInfo $params.credential
+    
+    # Initialize results folder
+    $resultsFolder = if ($config.output.customDirectory) { 
+        $config.output.customDirectory 
+    } elseif ($config.output.resultsFolder) { 
+        $config.output.resultsFolder 
+    } else { 
+        '.testresults' 
     }
-    catch {
-        # Handle errors by writing error result to file
-        if ($env:BC_RESULT_FILE) {
-            $errorWrapper = @{
-                Success = $false
-                Error = $_.Exception.Message
-                Type = $_.Exception.GetType().FullName
-                StackTrace = $_.ScriptStackTrace
-                TargetObject = $_.TargetObject
-                FullyQualifiedErrorId = $_.FullyQualifiedErrorId
-            }
-            $errorWrapper | ConvertTo-Json -Depth 10 -Compress | Out-File -FilePath $env:BC_RESULT_FILE -Encoding utf8 -NoNewline
-            Write-Host "##RESULT_WRITTEN##"
-        }
-        else {
-            throw
-        }
-    }
+    $resultsPath = Initialize-TestResultsFolder -WorkspacePath $config.workspacePath -ResultsFolder $resultsFolder -CustomDirectory $config.output.customDirectory
+    
+    $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $testResultsXml = Join-Path $resultsPath "TestResults_$timestamp.xml"
+    $aiResultsJson = Join-Path $resultsPath "TestResults_${timestamp}_AI.json"
+    
+    # Determine codeunit range
+    $codeunitRange = if ($params.codeunitFilter) { $params.codeunitFilter } else { $config.testApp.testCodeunitRange }
+    
+    $testResults = Invoke-BCTests `
+        -ContainerName $envConfig.containerName `
+        -ExtensionId $config.testApp.extensionId `
+        -TestCodeunitRange $codeunitRange `
+        -TestMethod $params.testMethod `
+        -Credential $credential `
+        -TestResultsFile $testResultsXml `
+        -WorkspacePath $config.workspacePath
+    
+    # Export AI-friendly results and get the data object back
+    $aiResults = Export-TestResultsForAI `
+        -OutputPath $aiResultsJson `
+        -Environment $envConfig `
+        -TestResults $testResults
+    
+    # Add file path for downstream consumers
+    $aiResults | Add-Member -NotePropertyName 'FilePath' -NotePropertyValue $aiResultsJson -Force
+    
+    # Return result directly - TypeScript wrapper handles file writing
+    return $aiResults
 }
 
 #endregion
